@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Data Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <style>
+        body, input, button, select, textarea {
+            font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;
+        }
+        canvas {
+            max-height: 20vh;
+            width: 90vw;
+            margin: auto;
+        }
+        #dataTables {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+        }
+        table {
+            width: 45vw;
+            margin: 10px;
+            border-collapse: collapse;
+        }
+        td, th {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .status-cell {
+            text-align: center;
+            font-weight: bold;
+        }
+        .update-delay {
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.2em; /* Larger font size */
+        }
+        .word_darkgreen { background-color: darkgreen; color: white; }
+        .word_green { background-color: green; color: white; }
+        .word_lightgreen { background-color: lightgreen; color: black; }
+        .word_blue { background-color: blue; color: white; }
+        .word_yellow { background-color: yellow; color: black; }
+        .word_red { background-color: red; color: white; }
+        .speed-bar {
+            height: 100%;
+            background-color: lightgreen;
+            width: 0%;
+            transition: width 0.5s ease;
+            padding: 0 5px;
+            box-sizing: border-box;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="snrChart"></canvas>
+    <canvas id="trackMap"></canvas> <!-- 新增轨迹图画布 -->
+    <div id="dataTables">
+        <table id="tpvTable">
+            <tbody>
+                <!-- TPV 数据将被填充到这里 -->
+            </tbody>
+        </table>
+        <table id="StatusTable">
+            <tbody>
+                <!-- 日志数据将被填充到这里 -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('snrChart').getContext('2d');
+        const ctxTrack = document.getElementById('trackMap').getContext('2d');
+
+        let snrChart, trackChart;
+
+        async function fetchSNRData() {
+            const response = await fetch('/snr-data');
+            const data = await response.json();
+            updateChart(data.satellites);
+            setTimeout(fetchSNRData, 1000);  // 每1000毫秒更新一次
+        }
+
+        function updateChart(satellites) {
+            satellites.sort((a, b) => a.PRN.localeCompare(b.PRN));
+            const labels = satellites.map(sat => `${sat.PRN}`);
+            const data = satellites.map(sat => sat.ss);
+            const backgroundColors = satellites.map(sat => sat.used ? 'rgba(0, 0, 139, 0.2)' : 'rgba(173, 216, 230, 0.2)'); // 深蓝和浅蓝
+            const borderColors = satellites.map(sat => sat.used ? 'rgba(0, 0, 139, 1)' : 'rgba(173, 216, 230, 1)');
+        
+            if (!snrChart) {
+                snrChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'SNR',
+                            data: data,
+                            backgroundColor: backgroundColors,
+                            borderColor: borderColors,
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            },
+                            x: {
+                                ticks: {
+                                    font: {
+                                        size: 10 // 减小字号到 10
+                                    },
+                                    autoSkip: false, // 禁用自动跳过
+                                    maxRotation: 90, // 最大旋转角度
+                                    minRotation: 90 // 最小旋转角度
+                                }
+                            }
+                        },
+                        plugins: {
+                            datalabels: {
+                                display: false // 不显示数据标签
+                            }
+                        }
+                    }
+                });
+            } else {
+                snrChart.data.labels = labels;
+                snrChart.data.datasets[0].data = data;
+                snrChart.data.datasets[0].backgroundColor = backgroundColors;
+                snrChart.data.datasets[0].borderColor = borderColors;
+                snrChart.update();
+            }
+        }
+
+        async function fetchTrackData() {
+            const response = await fetch('/path-data');
+            const data = await response.json();
+            updateTrackMap(data.lat, data.lon, data.speed);
+            setTimeout(fetchTrackData, 1000);  // 每500毫秒更新一次
+        }
+
+        async function updateTrackMap(lat, lon, speed) {
+            const currentTime = Date.now(); // 获取当前时间的时间戳
+            const retentionPeriod = 600000; // 10分钟的毫秒数
+        
+            const canvas = document.getElementById('trackMap');
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            const aspectRatio = width / height;
+            // 计算60秒内的移动距离转换成度
+            const distance = speed * 30;  // 速度(m/s) * 时间(s)
+            const range = distance / 111000;  // 转换距离到度数，因为1度大约111公里，即111000米
+            const lonRange = range * aspectRatio;  // 调整经度范围以匹配画布的宽高比
+        
+            if (!trackChart) {
+                trackChart = new Chart(ctx, {
+                    type: 'scatter',
+                    data: {
+                        datasets: [{
+                            label: 'GPS Track',
+                            data: [{ x: lon, y: lat, time: currentTime }],
+                            backgroundColor: 'rgba(255, 99, 132, 1)'
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            x: {
+                                type: 'linear',
+                                position: 'bottom',
+                                min: lon - lonRange,
+                                max: lon + lonRange
+                            },
+                            y: {
+                                min: lat - range,
+                                max: lat + range
+                            }
+                        }
+                    }
+                });
+            } else {
+                // 添加新的数据点
+                trackChart.data.datasets[0].data.push({ x: lon, y: lat, time: currentTime });
+                // 清理10分钟之前的数据点
+                trackChart.data.datasets[0].data = trackChart.data.datasets[0].data.filter(point => currentTime - point.time < retentionPeriod);
+        
+                // 更新图表显示范围
+                trackChart.options.scales.x.min = lon - lonRange;
+                trackChart.options.scales.x.max = lon + lonRange;
+                trackChart.options.scales.y.min = lat - range;
+                trackChart.options.scales.y.max = lat + range;
+        
+                trackChart.update();
+            }
+        }
+
+        async function fetchTPVData() {
+            const response = await fetch('/tpv-data');
+            const tpv = await response.json();
+            updateTable(tpv, 'tpvTable');
+            setTimeout(fetchTPVData, 1000);  // 每500毫秒更新一次
+        }
+
+        async function fetchStatusData() {
+            const response = await fetch('/status-data');
+            const log = await response.json();
+            updateTable(log, 'StatusTable');
+            setTimeout(fetchStatusData, 1000);  // 每500毫秒更新一次
+        }
+
+        function updateTable(data, tableId) {
+            const tbody = document.getElementById(tableId).getElementsByTagName('tbody')[0];
+            tbody.innerHTML = '';  // 清除旧数据
+            const traccarInterval = parseFloat(data["TRACCAR_REPORT_INTERVAL"]) || 1;  // 默认防护值
+            const APRSInterval = parseFloat(data["APRS_REPORT_INTERVAL"]) || 30;  // 默认防护值
+            for (const key in data) {
+                const row = tbody.insertRow();
+                const cellKey = row.insertCell(0);
+                const cellValue = row.insertCell(1);
+                cellKey.textContent = key;
+
+                //cellValue.textContent = data[key] || 'N/A';
+
+                // 检查数据是否为null或undefined，而不是falsy值
+                cellValue.textContent = data[key] !== null && data[key] !== undefined ? data[key] : 'N/A';
+
+                // 根据字段类型应用样式
+                if (key.toLowerCase() === 'status') {
+                    cellValue.className = `status-cell ${getStatusClass(data[key])}`;
+                } else if (key.toLowerCase() === 'speed') {
+                    let speedValue = parseFloat(data[key]);
+                    let percentage = Math.min(speedValue / 150 * 100, 100);  // 计算百分比
+                    cellValue.innerHTML = `<div class="speed-bar" style="width:${percentage}%;">${data[key]} km/h</div>`;
+                } else if (key.toLowerCase() === 'sat_qty') {
+                    let satValue = parseInt(data[key], 10);
+                    let satPercentage = Math.min(satValue / 40 * 100, 100);  // 计算百分比, 假定最大可见卫星数量为40
+                    cellValue.innerHTML = `<div class="speed-bar" style="width:${satPercentage}%;">${data[key]}</div>`;
+                } else if (key.toLowerCase() === 'traccarreport') {
+                    cellValue.className = `update-delay ${getDelayClass(data[key],traccarInterval)}`;
+                } else if (key.toLowerCase() === 'aprsreport') {
+                    cellValue.className = `update-delay ${getDelayClass(data[key],APRSInterval)}`;
+                } else if (key.toLowerCase() === 'traccarfailed_queue') {
+                    cellValue.className = `update-delay ${getFailedClass(data[key])}`;
+                }
+            }
+        }
+
+        function getStatusClass(status) {
+            switch (status) {
+                case 'RTK FIX': return 'word_darkgreen';
+                case 'RTK FLOAT': return 'word_green';
+                case 'DGPS': return 'word_lightgreen';
+                case 'Normal Mode 3D': return 'word_lightgreen';
+                case 'DR FIX': return 'word_blue';
+                default: return 'word_yellow';
+            }
+        }
+
+        function getDelayClass(delay, interval) {
+            const d = parseFloat(delay);
+
+            if (d < interval * 1.5) return 'word_green';              // 正常
+            if (d < interval * 3.5) return 'word_yellow';        // 延迟
+            return 'word_red';                                 // 严重延迟
+        }
+        function getFailedClass(delay, interval) {
+            const d = parseFloat(delay);
+
+            if (d < 1) return 'word_green';
+            if (d < 5) return 'word_yellow';
+            return 'word_red';
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchSNRData();
+            fetchTPVData();
+            fetchStatusData();
+            fetchTrackData();
+        });
+    </script>
+</body>
+</html>
