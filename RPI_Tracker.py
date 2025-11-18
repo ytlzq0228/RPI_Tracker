@@ -95,6 +95,7 @@ gps_data_cache = {
 	'TPV': {},
 	'Path': {},
 	'status_data': {},
+	"TPV_Raw_data": None
 }
 
 # ---------------- 后台线程：GPS 数据 ----------------
@@ -156,6 +157,8 @@ def update_gps_data():
 				if data_json.get('class') == 'TPV':
 					status_data = {}
 					status_data['Sat_Qty'] = len(gps_data_cache['SNR']['satellites'])
+					gps_data_cache['TPV_Raw_data'] = data_json
+					gps_data_cache['TPV_Raw_data']['Sat_Qty'] = len(gps_data_cache['SNR']['satellites'])
 
 					for i in ['alt', 'track', 'magtrack', 'magvar', 'time', 'speed']:
 						if i in data_json:
@@ -185,6 +188,7 @@ def update_gps_data():
 
 					gps_data_cache['TPV'] = status_data
 
+
 					# Path
 					for i in ['lat', 'lon', 'speed']:
 						if i in data_json:
@@ -199,7 +203,7 @@ def update_gps_data():
 					)
 		time.sleep(0.5)
 
-# ---------------- 后台线程：日志文件状态 ----------------
+# ---------------- 后台线程：上报线程状态 ----------------
 def update_report_status():
 	while True:
 		traccar_url = "http://127.0.0.1:5051/traccar_status"
@@ -287,6 +291,12 @@ async def path_data():
 async def status_data():
 	return gps_data_cache['status_data']
 
+@app.get("/GPSd-TPV-Raw-data")
+async def TPV_Raw_data():
+	if "TPV_Raw_data" in gps_data_cache:
+		return gps_data_cache['TPV_Raw_data']
+	else:
+		return None
 
 if __name__ == "__main__":
 	import logging

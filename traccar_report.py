@@ -9,7 +9,6 @@ import socket
 import requests
 import math
 from datetime import datetime, timezone
-import GNSS_NMAE
 from utils.utils import save_log,get_cpu_temperature
 import threading
 
@@ -138,7 +137,9 @@ def traccar_report():
 				if GPSd_raw_data.get("eph") is not None:
 					eph_val = float(GPSd_raw_data["eph"])
 					payload["accuracy"] = f"{min(eph_val, 100):.1f}"
-	
+				
+				if GPSd_raw_data.get("Sat_Qty") is not None:
+					payload["sat"] = GPSd_raw_data.get("Sat_Qty")	
 				#print(payload)
 				try:
 					resp = requests.post(TRACCAR_URL, data=payload, timeout=3)
@@ -169,13 +170,17 @@ def update_GPSd_raw_data():
 		try:
 			while True:
 				try:
-					GPSd_raw_data = GNSS_NMAE.Get_GNSS_Position.GPSd(only_raw_data=True)
-					if GPSd_raw_data:
+					#GPSd_raw_data = GNSS_NMAE.Get_GNSS_Position.GPSd(only_raw_data=True)
+					url = "http://127.0.0.1:5050/GPSd-TPV-Raw-data"
+					resp = requests.get(url, timeout=1)
+					if resp.json():
+						GPSd_raw_data = resp.json()
 						break  # 成功获取GNSS数据时退出循环
+					time.sleep(1)
 				except Exception as err:
 					save_log(f"Retrying get_gnss_position with {err}")
 					time.sleep(1)  # 等待1秒后重试
-
+			time.sleep(0.5)
 		except Exception as err:
 			save_log(f"main: {err}")
 			#raise
