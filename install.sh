@@ -55,12 +55,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/bin/bash $SCRIPT_PATH
+WorkingDirectory=/etc/RPI_Tracker
+ExecStart=/usr/bin/python3 RPI_Tracker.py
 ExecStop=/bin/bash -c "pkill -f RPI_Tracker.py"
 Restart=on-failure
 RestartSec=5
-StandardOutput=append:$LOG_DIR/RPI_Tracker.log
-StandardError=append:$LOG_DIR/RPI_Tracker.err
 
 [Install]
 WantedBy=multi-user.target

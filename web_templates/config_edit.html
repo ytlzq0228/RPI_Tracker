@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>编辑配置 - {{ service_name }}</title>
+
+    <style>
+        body, input, button, select, textarea {
+            font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;
+        }
+
+        body {
+            margin: 20px;
+        }
+
+        h1 { margin-bottom: 5px; }
+        h2 { margin-top: 22px; font-size: 1.15em; }
+
+        .config-path {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+
+        .msg-ok { color: green; margin-top: 10px; }
+        .msg-err { color: red; margin-top: 10px; }
+
+        /* 表格整体样式与现有页面保持一致 */
+        table {
+            width: 60vw;             /* 比原页面更窄，避免太宽 */
+            margin: 10px 0;
+            border-collapse: collapse;
+        }
+
+        td, th {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        /* Key 列设置窄宽度 */
+        .col-key {
+            width: 20%;             /* 窄一点 */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-family: monospace;
+        }
+
+        /* Value 列为主要内容区域 */
+        .col-value {
+            width: 80%;
+            font-family: monospace;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 6px 8px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+
+        .btn {
+            padding: 10px 18px;
+            margin-top: 15px;
+            background-color: #f2f2f2;
+            border: 1px solid #ddd;
+            text-decoration: none;
+            color: black;
+            cursor: pointer;
+            display: inline-block;
+
+            font-size: 14px;        /* 强制按钮与链接字体一致 */
+            line-height: 1.2;       /* 避免按钮文字偏上偏下 */
+        }
+
+    </style>
+</head>
+<body>
+    <h1>编辑配置文件</h1>
+    <div class="config-path">文件路径：{{ config_file }}</div>
+
+    {% if message %}
+        <div class="msg-ok">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+        <div class="msg-err">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/config">
+        {% for section, items in config.items() %}
+            <h2>[{{ section }}]</h2>
+
+            <table>
+                <tr>
+                    <th class="col-key">Key</th>
+                    <th class="col-value">Value</th>
+                </tr>
+
+                {% for key, value in items.items() %}
+                    <tr>
+                        <td class="col-key">{{ key }}</td>
+                        <td class="col-value">
+                            <input type="text"
+                                name="cfg_{{ section }}___{{ key }}"
+                                value="{{ value }}">
+                        </td>
+                    </tr>
+                {% endfor %}
+            </table>
+
+        {% endfor %}
+
+        <button class="btn" type="submit">保存并重启服务</button>
+        <a href="/" class="btn">返回 Dashboard 主页</a>
+   
+    </form>
+</body>
+</html>

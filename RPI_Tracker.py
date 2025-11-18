@@ -9,8 +9,10 @@ import time
 import os
 import configparser
 import requests
+import subprocess
 from gps3 import gps3
 from datetime import datetime
+
 
 # ---------------- GPIO / MockGPIO ----------------
 try:
@@ -60,13 +62,14 @@ templates = Jinja2Templates(directory="web_templates")
 # 如果有静态资源，可以这样挂载（按需）
 # app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# ---------------- GPSD 连接 ----------------
+# ---------------- GPSD 连接和全局配置 ----------------
 gps_socket = gps3.GPSDSocket()
 data_stream = gps3.DataStream()
 GPSd_host = config['GPS_Config']['GPSd_host']
 GPSd_port = config['GPS_Config']['GPSd_port']
 gps_socket.connect(host=GPSd_host, port=GPSd_port)
 gps_socket.watch(enable=True, gpsd_protocol='json')
+SERVICE_NAME = "RPI_Tracker.service"
 
 # ---------------- 数据结构与工具函数 ----------------
 def get_constellation(prn):
@@ -297,6 +300,82 @@ async def TPV_Raw_data():
 		return gps_data_cache['TPV_Raw_data']
 	else:
 		return None
+
+@app.get("/config", response_class=HTMLResponse)
+async def get_config_page(request: Request):
+	cfg = configparser.ConfigParser()
+	cfg.read(CONFIG_FILE, encoding="utf-8")
+
+	# 转成普通 dict，方便模板遍历
+	data = {}
+	for section in cfg.sections():
+		data[section] = {}
+		for key, value in cfg.items(section):
+			data[section][key] = value
+	context = {
+		"request": request,
+		"config": data,
+		"config_file": CONFIG_FILE,
+		"service_name": SERVICE_NAME,
+		"message": None,
+		"error": None,
+	}
+	return templates.TemplateResponse("config_edit.html", context)
+
+@app.post("/config", response_class=HTMLResponse)
+async def post_config_page(request: Request):
+	form = await request.form()
+
+	new_cfg = configparser.ConfigParser()
+
+	# 约定 input 的 name 形如： cfg_<section>___<option>
+	for full_key, value in form.items():
+		if not full_key.startswith("cfg_"):
+			continue
+		# 去掉前缀
+		_, rest = full_key.split("cfg_", 1)
+		# rest = "<section>___<option>"
+		try:
+			section, option = rest.split("___", 1)
+		except ValueError:
+			# 名字不符合约定就跳过
+			continue
+
+		if section not in new_cfg:
+			new_cfg[section] = {}
+		new_cfg[section][option] = value
+
+	message = None
+	error = None
+	try:
+		with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+			new_cfg.write(f)
+		try:
+			subprocess.run(["systemctl", "restart", SERVICE_NAME], check=True)
+			message = "配置已保存，并成功重启服务。"
+		except subprocess.CalledProcessError as e:
+			error = f"配置已保存，但重启服务失败：{e}"
+	except Exception as e:
+		error = f"保存配置失败：{e}"
+
+	# 保存/重启后重新读取最新配置给前端展示
+	cfg = configparser.ConfigParser()
+	cfg.read(CONFIG_FILE, encoding="utf-8")
+	data = {}
+	for section in cfg.sections():
+		data[section] = {}
+		for key, value in cfg.items(section):
+			data[section][key] = value
+
+	context = {
+		"request": request,
+		"config": data,
+		"config_file": CONFIG_FILE,
+		"service_name": SERVICE_NAME,
+		"message": message,
+		"error": error,
+	}
+	return templates.TemplateResponse("config_edit.html", context)
 
 if __name__ == "__main__":
 	import logging
