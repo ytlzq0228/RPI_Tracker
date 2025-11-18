@@ -8,7 +8,7 @@ import aprs
 import socket
 import requests
 import math
-from datetime import datetime, UTC
+from datetime import datetime
 import GNSS_NMAE
 from utils.utils import save_log,get_cpu_temperature,get_uptime
 import threading

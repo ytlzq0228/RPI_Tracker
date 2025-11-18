@@ -8,7 +8,7 @@ import aprs
 import socket
 import requests
 import math
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 import GNSS_NMAE
 from utils.utils import save_log,get_cpu_temperature
 import threading
@@ -111,7 +111,7 @@ def traccar_report():
 					continue
 
 				# 时间戳
-				ts = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+				ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 				if int(GPSd_raw_data['speed']) > STILL_SPEED_THRESHOLD or current_timestamp - still_report_traccar_timestamp > STILL_REPORT_INTERVAL:
 					still_report_traccar_timestamp = current_timestamp
 				else:
