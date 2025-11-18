@@ -253,9 +253,9 @@ def update_report_status():
 
 # ---------------- FastAPI 生命周期：启动线程 ----------------
 def traccar_report_app():
-	uvicorn.run("traccar_report:app", host="0.0.0.0", port=5051, reload=False)
+	uvicorn.run("traccar_report:app", host="0.0.0.0", port=5051, reload=False, access_log=False)
 def aprs_report_app():
-	uvicorn.run("aprs_report:app", host="0.0.0.0", port=5052, reload=False)
+	uvicorn.run("aprs_report:app", host="0.0.0.0", port=5052, reload=False, access_log=False)
 
 @app.on_event("startup")
 def startup_event():
@@ -302,4 +302,4 @@ if __name__ == "__main__":
 	import logging
 	import uvicorn
 	logging.getLogger("uvicorn.access").setLevel(logging.ERROR)
-	uvicorn.run(app, host="0.0.0.0", port=5050)
+	uvicorn.run(app, host="0.0.0.0", port=5050, access_log=False)
