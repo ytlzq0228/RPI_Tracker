@@ -351,10 +351,15 @@ async def post_config_page(request: Request):
 		with open(CONFIG_FILE, "w", encoding="utf-8") as f:
 			new_cfg.write(f)
 		try:
-			subprocess.run(["systemctl", "restart", SERVICE_NAME], check=True)
-			message = "配置已保存，并成功重启服务。"
-		except subprocess.CalledProcessError as e:
-			error = f"配置已保存，但重启服务失败：{e}"
+			# 如果用了 sudoers 免密，这里用 sudo + 绝对路径
+			subprocess.Popen(
+				["sudo", "/bin/systemctl", "restart", SERVICE_NAME],
+				stdout=subprocess.DEVNULL,
+				stderr=subprocess.DEVNULL,
+			)
+		except Exception as e:
+			# 这里一般只记录日志，不再往上抛，让页面提示“已发出重启指令”
+			print(f"restart_service_async error: {e}")
 	except Exception as e:
 		error = f"保存配置失败：{e}"
 
