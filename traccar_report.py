@@ -126,8 +126,6 @@ def traccar_consumer():
 				SEND_QUEUE.append(item)
 				time.sleep(0.2)
 				continue
-
-			SEND_QUEUE.popleft()
 			payload = item["payload"]
 
 			try:
