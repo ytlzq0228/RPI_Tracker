@@ -167,6 +167,8 @@
         
             const canvas = document.getElementById('trackMap');
             const ctx = canvas.getContext('2d');
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
             const width = canvas.width;
             const height = canvas.height;
             const aspectRatio = width / height;
@@ -261,7 +263,7 @@
                     cellValue.className = `update-delay ${getDelayClass(data[key],traccarInterval)}`;
                 } else if (key.toLowerCase() === 'aprsreport') {
                     cellValue.className = `update-delay ${getDelayClass(data[key],APRSInterval)}`;
-                } else if (key.toLowerCase() === 'traccarfailed_queue') {
+                } else if (key.toLowerCase() === 'traccar_queue') {
                     cellValue.className = `update-delay ${getFailedClass(data[key])}`;
                 }
             }
@@ -285,7 +287,7 @@
             if (d < interval * 3.5) return 'word_yellow';        // 延迟
             return 'word_red';                                 // 严重延迟
         }
-        function getFailedClass(delay, interval) {
+        function getFailedClass(delay) {
             const d = parseFloat(delay);
 
             if (d < 1) return 'word_green';

@@ -219,12 +219,13 @@ def update_report_status():
 	
 			if report_ts is None:
 				gps_data_cache['status_data']['TraccarReport'] = "report_traccar_timestamp not found in response"
+				time.sleep(1)
 				continue
 	
 			now_ts = time.time()
 			delay = now_ts - float(report_ts)
 			gps_data_cache['status_data']['TraccarReport'] = f"{delay:.2f}"
-			gps_data_cache['status_data']['TraccarFAILED_QUEUE'] = data.get("FAILED_QUEUE_Len")
+			gps_data_cache['status_data']['Traccar_QUEUE'] = data.get("queue_len")
 			gps_data_cache['status_data']['TRACCAR_REPORT_INTERVAL'] = data.get("TRACCAR_REPORT_INTERVAL")
 		except Exception as e:
 			print(f"Error fetching log file data: {e}")
@@ -242,6 +243,7 @@ def update_report_status():
 	
 			if report_ts is None:
 				gps_data_cache['status_data']['APRSReport'] = "report_APRS_timestamp not found in response"
+				time.sleep(1)
 				continue
 	
 			now_ts = time.time()
