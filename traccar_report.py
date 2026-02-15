@@ -105,7 +105,7 @@ def traccar_report():
 			
 			if GPSd_raw_data.get("Sat_Qty") is not None:
 				payload["sat"] = GPSd_raw_data.get("Sat_Qty")	
-			#print(payload)
+			save_log(f"Payload Producer:{payload}")
 			SEND_QUEUE.append({
 				"payload": payload,
 				"attempts": 0,
