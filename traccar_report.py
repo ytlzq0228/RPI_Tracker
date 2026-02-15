@@ -52,7 +52,7 @@ RETRYABLE_HTTP = {408, 429, 500, 502, 503, 504}
 if DB_ENABLE:
 	from SQL_Lite_Queue import PersistentQueue
 	DB_PATH=config['Traccar_Config']['DB_path']
-	SEND_QUEUE = PersistentQueue(DB_PATH, maxlen=5000)
+	SEND_QUEUE = PersistentQueue(DB_PATH, maxlen=0)
 else:
 	from collections import deque
 	SEND_QUEUE = deque(maxlen=5000)
@@ -112,8 +112,6 @@ def traccar_report():
 				"next_ts": 0,
 				"created_ts": current_timestamp
 			})
-			if len(SEND_QUEUE) > 4000:
-				save_log("SEND_QUEUE almost full, skip producing")
 		except Exception as e:
 			save_log(f"Producer error: {e}")
 
@@ -122,7 +120,7 @@ def traccar_report():
 def traccar_consumer():
 	while True:
 		try:
-			if not SEND_QUEUE:
+			if not SEND_QUEUE or len(SEND_QUEUE)==0:
 				time.sleep(0.2)
 				continue
 
@@ -137,7 +135,7 @@ def traccar_consumer():
 			try:
 				resp = requests.post(TRACCAR_URL, data=payload, timeout=3)
 				if 200 <= resp.status_code < 300:
-					save_log(f"Traccar Sent OK id={payload.get('id')} queue={len(SEND_QUEUE)}")
+					save_log(f"Traccar Sent OK payload={payload} queue={len(SEND_QUEUE)}")
 				elif resp.status_code in RETRYABLE_HTTP:
 					attempts = item["attempts"] + 1
 					backoff = min(60, attempts * 5)
