@@ -1,0 +1,58 @@
+[Test_Flag]
+enable = False
+
+[APRS_Config]
+aprs_enable = True
+ssid = BI1FQO-MI
+callsign = BI1FQO
+aprs_password = 20898
+icon = >
+message = on 逗老师的Xiaomi Su7 Max,see more https://blog.csdn.net/ytlzq0228/article/details/145265823
+aprs_server = china.aprs2.net:14580
+aprs_report_interval = 30
+
+[OLED_Config]
+oled_enable = False
+oled_address = 0x3c
+
+[SFTP_Config]
+local_log_file_path = /mnt/usb
+nmea_log_interval = 2
+still_log_interval = 120
+still_speed_threshold = 0
+remote_user = pi-star
+remote_host = nas.ctsdn.com
+remote_dir = /volume1/Storage/Su7-GPS-PATH/RPI_APRS_Log
+remote_port = 22
+
+[GPS_Config]
+gps_device = GPSd
+gpsd_host = 127.0.0.1
+gpsd_port = 2947
+
+[PROJECT_PATH]
+project_dir = /etc/RPI_APRS
+
+[GPIO_CONTROL]
+enable = True
+gpio_pin = 20
+
+[RTK_CONFIG]
+enable = True
+rtk_port = /dev/ttyUSB0
+username = qxymtq002
+password = c4bcfd9
+ntrip_server = rtk.ntrip.qxwz.com
+ntrip_port = 8002
+mountpoint = RTCM32_GGB
+
+[Traccar_Config]
+enable = True
+DB_enable=True
+DB_path=/mnt/usb/send_queue.db
+traccar_url = http://traccar_report.ctsdn.com:2232
+vin = BI1FQO-MI
+traccar_report_interval = 1
+still_report_interval = 120
+still_speed_threshold = 0
+

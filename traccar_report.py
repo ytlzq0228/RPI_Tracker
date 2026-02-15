@@ -17,9 +17,6 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from collections import deque
-SEND_QUEUE = deque(maxlen=5000)
-
 CONFIG_FILE='/etc/GPS_config.ini'
 VERSION='traccar_1115.01'
 
@@ -32,6 +29,7 @@ Test_Flag=config.getboolean('Test_Flag', 'enable')
 VIN=config['Traccar_Config']['VIN']
 GPS_Device=config['GPS_Config']['GPS_Device']
 TRACCAR_ENABLE=config.getboolean('Traccar_Config', 'enable')
+DB_ENABLE=config.getboolean('Traccar_Config', 'DB_enable')
 TRACCAR_URL=config['Traccar_Config']['TRACCAR_URL']
 TRACCAR_REPORT_INTERVAL=int(config['Traccar_Config']['TRACCAR_REPORT_INTERVAL'])
 STILL_REPORT_INTERVAL=int(config['Traccar_Config']['STILL_REPORT_INTERVAL'])
@@ -50,6 +48,14 @@ GPSd_raw_data={}
 report_traccar_timestamp=0
 still_report_traccar_timestamp=0
 RETRYABLE_HTTP = {408, 429, 500, 502, 503, 504}
+
+if DB_ENABLE:
+	from SQL_Lite_Queue import PersistentQueue
+	DB_PATH=config['Traccar_Config']['DB_path']
+	SEND_QUEUE = PersistentQueue(DB_PATH, maxlen=5000)
+else:
+	from collections import deque
+	SEND_QUEUE = deque(maxlen=5000)
 
 def traccar_report():
 	global report_traccar_timestamp,still_report_traccar_timestamp
