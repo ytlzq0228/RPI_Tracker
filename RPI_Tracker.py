@@ -129,9 +129,10 @@ def update_gps_data():
 					print("unpack error:", e)
 					print("bad line:", repr(line))
 					continue
-				try:
-					# SNR / SKY
-					if data_json.get('class') == 'SKY' and 'satellites' in data_json:
+
+				# SNR / SKY
+				if data_json.get('class') == 'SKY' and 'satellites' in data_json:
+					try:
 						now_ts = time.time()
 						for i in data_json['satellites']:
 							prn = get_constellation(i['PRN'])
@@ -151,12 +152,12 @@ def update_gps_data():
 						gps_data_cache['SNR']['sat_map']=last_sat_map
 						gps_data_cache['SNR']['satellites'] = list(gps_data_cache['SNR']['sat_map'].values())
 						#print(gps_data_cache['SNR']['satellites'])
-				except Exception as e:
-					print("SNR/SKY Err:", e)	
+					except Exception as e:
+						print("SNR/SKY Err:", e)	
 
-				try:
-					# TPV
-					if data_json.get('class') == 'TPV':
+				# TPV
+				if data_json.get('class') == 'TPV':
+					try:
 						status_data = {}
 						status_data['Sat_Qty'] = len(gps_data_cache['SNR']['satellites'])
 						gps_data_cache['TPV_Raw_data'] = data_json
@@ -203,8 +204,8 @@ def update_gps_data():
 						gps_data_cache['Path']['speed'] = max(
 							(round(gps_data_cache['Path']['speed'] / step) * step), 0.5
 						)
-				except Exception as e:
-					print("TPV Err:", e)			
+					except Exception as e:
+						print("TPV Err:", e)			
 		time.sleep(0.5)
 
 # ---------------- 后台线程：上报线程状态 ----------------
