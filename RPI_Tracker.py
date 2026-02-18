@@ -129,81 +129,82 @@ def update_gps_data():
 					print("unpack error:", e)
 					print("bad line:", repr(line))
 					continue
-
-				# SNR / SKY
-
-				if data_json.get('class') == 'SKY' and 'satellites' in data_json:
-					now_ts = time.time()
-					for i in data_json['satellites']:
-						prn = get_constellation(i['PRN'])
-						gps_data_cache['SNR']['sat_map'][prn] = {
-							'PRN': prn,
-							'ss': i.get('ss', 0),
-							'used': i.get('used', False),
-							'last_seen': now_ts,
+				try:
+					# SNR / SKY
+					if data_json.get('class') == 'SKY' and 'satellites' in data_json:
+						now_ts = time.time()
+						for i in data_json['satellites']:
+							prn = get_constellation(i['PRN'])
+							gps_data_cache['SNR']['sat_map'][prn] = {
+								'PRN': prn,
+								'ss': i.get('ss', 0),
+								'used': i.get('used', False),
+								'last_seen': now_ts,
+							}
+					
+	
+						EXPIRE_SECONDS = 60
+						last_sat_map= {
+							prn: sat for prn, sat in gps_data_cache['SNR']['sat_map'].items()
+							if now_ts - sat['last_seen'] <= EXPIRE_SECONDS
 						}
-				
+						gps_data_cache['SNR']['sat_map']=last_sat_map
+						gps_data_cache['SNR']['satellites'] = list(gps_data_cache['SNR']['sat_map'].values())
+						#print(gps_data_cache['SNR']['satellites'])
+				except Exception as e:
+					print("SNR/SKY Err:", e)	
 
-					EXPIRE_SECONDS = 60
-					last_sat_map= {
-						prn: sat for prn, sat in gps_data_cache['SNR']['sat_map'].items()
-						if now_ts - sat['last_seen'] <= EXPIRE_SECONDS
-					}
-					gps_data_cache['SNR']['sat_map']=last_sat_map
-					gps_data_cache['SNR']['satellites'] = list(gps_data_cache['SNR']['sat_map'].values())
-					#print(gps_data_cache['SNR']['satellites'])
-
-
-
-				# TPV
-				
-				if data_json.get('class') == 'TPV':
-					status_data = {}
-					status_data['Sat_Qty'] = len(gps_data_cache['SNR']['satellites'])
-					gps_data_cache['TPV_Raw_data'] = data_json
-					gps_data_cache['TPV_Raw_data']['Sat_Qty'] = len(gps_data_cache['SNR']['satellites'])
-
-					for i in ['alt', 'track', 'magtrack', 'magvar', 'time', 'speed']:
-						if i in data_json:
-							status_data[i] = data_json[i]
+				try:
+					# TPV
+					if data_json.get('class') == 'TPV':
+						status_data = {}
+						status_data['Sat_Qty'] = len(gps_data_cache['SNR']['satellites'])
+						gps_data_cache['TPV_Raw_data'] = data_json
+						gps_data_cache['TPV_Raw_data']['Sat_Qty'] = len(gps_data_cache['SNR']['satellites'])
+	
+						for i in ['alt', 'track', 'magtrack', 'magvar', 'time', 'speed']:
+							if i in data_json:
+								status_data[i] = data_json[i]
+							else:
+								status_data[i] = 0
+	
+						mode_map = {0: "Unknown",1: "no fix",2: "Normal Mode 2D",3: "Normal Mode 3D",}
+						status_map = {0: "Unknown",1: "Normal",2: "DGPS",3: "RTK FIX",4: "RTK FLOAT",5: "DR FIX",6: "GNSSDR",7: "Time (surveyed)",8: "Simulated",9: "P(Y)",}
+	
+						if data_json.get('status', 1) == 1:
+							status_data['status'] = mode_map.get(
+								data_json.get('mode', 0), "Unknown"
+							)
 						else:
-							status_data[i] = 0
-
-					mode_map = {0: "Unknown",1: "no fix",2: "Normal Mode 2D",3: "Normal Mode 3D",}
-					status_map = {0: "Unknown",1: "Normal",2: "DGPS",3: "RTK FIX",4: "RTK FLOAT",5: "DR FIX",6: "GNSSDR",7: "Time (surveyed)",8: "Simulated",9: "P(Y)",}
-
-					if data_json.get('status', 1) == 1:
-						status_data['status'] = mode_map.get(
-							data_json.get('mode', 0), "Unknown"
+							status_data['status'] = status_map.get(
+								data_json.get('status', 1), "Unknown"
+							)
+	
+						# 米/秒 -> km/h
+						status_data['speed'] = "%.2f" % (status_data['speed'] * 3.6)
+	
+						if status_data['time'] != 0:
+							status_data['time'] = datetime.fromisoformat(
+								status_data['time'].replace('Z', '+00:00')
+							).strftime('%Y-%m-%d %H:%M:%S')
+	
+						gps_data_cache['TPV'] = status_data
+	
+	
+						# Path
+						for i in ['lat', 'lon', 'speed']:
+							if i in data_json:
+								gps_data_cache['Path'][i] = data_json[i]
+	
+						# speed 阶梯化
+						step = 5
+						if 'speed' not in gps_data_cache['Path']:
+							gps_data_cache['Path']['speed'] = 0
+						gps_data_cache['Path']['speed'] = max(
+							(round(gps_data_cache['Path']['speed'] / step) * step), 0.5
 						)
-					else:
-						status_data['status'] = status_map.get(
-							data_json.get('status', 1), "Unknown"
-						)
-
-					# 米/秒 -> km/h
-					status_data['speed'] = "%.2f" % (status_data['speed'] * 3.6)
-
-					if status_data['time'] != 0:
-						status_data['time'] = datetime.fromisoformat(
-							status_data['time'].replace('Z', '+00:00')
-						).strftime('%Y-%m-%d %H:%M:%S')
-
-					gps_data_cache['TPV'] = status_data
-
-
-					# Path
-					for i in ['lat', 'lon', 'speed']:
-						if i in data_json:
-							gps_data_cache['Path'][i] = data_json[i]
-
-					# speed 阶梯化
-					step = 5
-					if 'speed' not in gps_data_cache['Path']:
-						gps_data_cache['Path']['speed'] = 0
-					gps_data_cache['Path']['speed'] = max(
-						(round(gps_data_cache['Path']['speed'] / step) * step), 0.5
-					)
+				except Exception as e:
+					print("TPV Err:", e)			
 		time.sleep(0.5)
 
 # ---------------- 后台线程：上报线程状态 ----------------
