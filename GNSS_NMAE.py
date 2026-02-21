@@ -268,7 +268,7 @@ class Get_GNSS_Position:
 					else:
 						return lat, lat_dir, lon, lon_dir, altitude, timestamp, speed, course, GNSS_Type, lat_raw, lon_raw, GPS_Source, raw_data
 				
-				time.sleep(0.01)  # 避免 CPU 100% 占用
+				time.sleep(0.1)  # 避免 CPU 100% 占用
 	
 		except Exception as e:
 			save_log(f"Error fetching GPSd data: {e}")
