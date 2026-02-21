@@ -13,10 +13,23 @@ import subprocess
 from gps3 import gps3
 from datetime import datetime
 
+# ---------------- 配置读取 ----------------
+CONFIG_FILE = '/etc/GPS_config.ini'
+config = configparser.ConfigParser()
+config.read(CONFIG_FILE)
 
 # ---------------- GPIO / MockGPIO ----------------
 try:
 	import RPi.GPIO as GPIO
+	GPIO.setmode(GPIO.BCM)
+	GPIO.setwarnings(False)
+
+	GPIO_STARTUP_PIN = 21
+	GPIO_LOG_ERROR_PIN = 16
+	GPIO.setup(GPIO_STARTUP_PIN, GPIO.OUT)
+	GPIO.setup(GPIO_LOG_ERROR_PIN, GPIO.OUT)
+
+	GPIO.output(GPIO_STARTUP_PIN, True)
 except (ImportError, ModuleNotFoundError):
 	class MockGPIO:
 		BCM = BOARD = IN = OUT = HIGH = LOW = None
@@ -41,19 +54,6 @@ except (ImportError, ModuleNotFoundError):
 			pass
 	GPIO = MockGPIO()
 
-# ---------------- 配置读取 ----------------
-CONFIG_FILE = '/etc/GPS_config.ini'
-config = configparser.ConfigParser()
-config.read(CONFIG_FILE)
-
-GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)
-GPIO_STARTUP_PIN = 21
-GPIO_LOG_ERROR_PIN = 16
-GPIO.setup(GPIO_STARTUP_PIN, GPIO.OUT)
-GPIO.setup(GPIO_LOG_ERROR_PIN, GPIO.OUT)
-
-GPIO.output(GPIO_STARTUP_PIN, True)
 
 # ---------------- FastAPI & 模板 ----------------
 app = FastAPI()
