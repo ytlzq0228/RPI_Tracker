@@ -19,40 +19,42 @@ config = configparser.ConfigParser()
 config.read(CONFIG_FILE)
 
 # ---------------- GPIO / MockGPIO ----------------
+# ---------------- GPIO / MockGPIO ----------------
+class MockGPIO:
+    BCM = BOARD = IN = OUT = HIGH = LOW = None
+
+    @staticmethod
+    def setwarnings(*args, **kwargs): pass
+    @staticmethod
+    def setmode(*args, **kwargs): pass
+    @staticmethod
+    def setup(*args, **kwargs): pass
+    @staticmethod
+    def input(*args, **kwargs): return 0
+    @staticmethod
+    def output(*args, **kwargs): pass
+    @staticmethod
+    def cleanup(*args, **kwargs): pass
+
 try:
-	import RPi.GPIO as GPIO
-	GPIO.setmode(GPIO.BCM)
-	GPIO.setwarnings(False)
+    import RPi.GPIO as GPIO
+    try:
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setwarnings(False)
 
-	GPIO_STARTUP_PIN = 21
-	GPIO_LOG_ERROR_PIN = 16
-	GPIO.setup(GPIO_STARTUP_PIN, GPIO.OUT)
-	GPIO.setup(GPIO_LOG_ERROR_PIN, GPIO.OUT)
+        GPIO_STARTUP_PIN = 21
+        GPIO_LOG_ERROR_PIN = 16
+        GPIO.setup(GPIO_STARTUP_PIN, GPIO.OUT)
+        GPIO.setup(GPIO_LOG_ERROR_PIN, GPIO.OUT)
 
-	GPIO.output(GPIO_STARTUP_PIN, True)
-except (ImportError, ModuleNotFoundError):
-	class MockGPIO:
-		BCM = BOARD = IN = OUT = HIGH = LOW = None
-
-		@staticmethod
-		def setwarnings(*args, **kwargs):
-			pass
-		@staticmethod
-		def setmode(*args, **kwargs):
-			pass
-		@staticmethod
-		def setup(*args, **kwargs):
-			pass
-		@staticmethod
-		def input(*args, **kwargs):
-			return 0
-		@staticmethod
-		def output(*args, **kwargs):
-			pass
-		@staticmethod
-		def cleanup(*args, **kwargs):
-			pass
-	GPIO = MockGPIO()
+        GPIO.output(GPIO_STARTUP_PIN, True)
+    except RuntimeError as e:
+        # 典型：Cannot determine SOC peripheral base address
+        print(f"[GPIO] RPi.GPIO init failed, fallback to MockGPIO: {e}")
+        GPIO = MockGPIO()
+except (ImportError, ModuleNotFoundError) as e:
+    print(f"[GPIO] RPi.GPIO not available, fallback to MockGPIO: {e}")
+    GPIO = MockGPIO()
 
 
 # ---------------- FastAPI & 模板 ----------------
