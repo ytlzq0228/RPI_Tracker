@@ -192,6 +192,7 @@ class Get_GNSS_Position:
 		try:
 			for new_data in gps_socket:
 				if not new_data:
+					time.sleep(0.05)
 					continue
 
 				# gps3 可能给的是 bytes，也可能是 str，先统一成 str
