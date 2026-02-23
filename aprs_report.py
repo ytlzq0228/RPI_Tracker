@@ -140,39 +140,6 @@ def aprs_report():
 		except Exception as err:
 			save_log(f"APRS Report Error: {err}")
 
-
-#def update_GPS_data():
-#	global lat,lat_dir,lon,lon_dir,altitude,NMEA_timestamp,speed,course,GNSS_Type,lat_raw,lon_raw,GPS_Source,GPSd_raw_data
-#	log_timestamp=0
-#	while True:
-#		try:
-#			while True:
-#				try:
-#					lat,lat_dir,lon,lon_dir,altitude,NMEA_timestamp,speed,course,GNSS_Type,lat_raw,lon_raw,GPS_Source,GPSd_raw_data = GNSS_NMAE.Get_GNSS_Position.GPSd()
-#					break  # 成功获取GNSS数据时退出循环
-#				except Exception as err:
-#					save_log(f"Retrying get_gnss_position with {err}")
-#					time.sleep(1)  # 等待1秒后重试
-#
-#			current_timestamp=time.time()
-#
-#			# 主判断逻辑
-#			if float(speed) > STILL_SPEED_THRESHOLD:
-#				# 移动状态，正常记录
-#				if current_timestamp - log_timestamp >= NMEA_LOG_INTERVAL:
-#					log_timestamp = current_timestamp
-#					save_log(f"gpx:{lat_raw,lat_dir,lon_raw,lon_dir,altitude,NMEA_timestamp,speed,course,GPS_Source,GNSS_Type,get_cpu_temperature(),get_uptime()}")
-#			else:
-#				if current_timestamp - log_timestamp >= STILL_LOG_INTERVAL:
-#					log_timestamp = current_timestamp
-#					save_log(f"gpx:{lat_raw,lat_dir,lon_raw,lon_dir,altitude,NMEA_timestamp,speed,course,GPS_Source,GNSS_Type,get_cpu_temperature(),get_uptime()}")
-#
-#
-#		except Exception as err:
-#			save_log(f"main: {err}")
-#			#raise
-#			#切记全部改完了之后这里把raise注释掉，仅调试期间使用
-
 def update_GPSd_raw_data():
 	global GPSd_raw_data
 	while True:
@@ -182,7 +149,7 @@ def update_GPSd_raw_data():
 					#GPSd_raw_data = GNSS_NMAE.Get_GNSS_Position.GPSd(only_raw_data=True)
 					url = "http://127.0.0.1:5050/GPSd-TPV-Raw-data"
 					resp = requests.get(url, timeout=1)
-					if resp.json():
+					if resp.status_code==200:
 						GPSd_raw_data = resp.json()
 						break  # 成功获取GNSS数据时退出循环
 					time.sleep(1)

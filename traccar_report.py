@@ -77,7 +77,7 @@ def traccar_report():
 
 			# 时间戳
 			ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-			if int(GPSd_raw_data['speed']) > STILL_SPEED_THRESHOLD or current_timestamp - still_report_traccar_timestamp > STILL_REPORT_INTERVAL:
+			if int(GPSd_raw_data.get("speed",0)) > STILL_SPEED_THRESHOLD or current_timestamp - still_report_traccar_timestamp > STILL_REPORT_INTERVAL:
 				still_report_traccar_timestamp = current_timestamp
 			else:
 				continue
@@ -166,7 +166,7 @@ def update_GPSd_raw_data():
 					#GPSd_raw_data = GNSS_NMAE.Get_GNSS_Position.GPSd(only_raw_data=True)
 					url = "http://127.0.0.1:5050/GPSd-TPV-Raw-data"
 					resp = requests.get(url, timeout=1)
-					if resp.json():
+					if resp.status_code==200:
 						GPSd_raw_data = resp.json()
 						break  # 成功获取GNSS数据时退出循环
 					time.sleep(1)
@@ -188,16 +188,6 @@ def startup_event():
 	if TRACCAR_ENABLE:
 		threading.Thread(target=traccar_report,daemon=True,name="traccar_producer").start()
 		threading.Thread(target=traccar_consumer,daemon=True,name="traccar_consumer").start()
-
-#@app.get("/traccar_status")
-#async def traccar_status():
-#	data = {
-#		"report_traccar_timestamp": report_traccar_timestamp,
-#		"still_report_traccar_timestamp": still_report_traccar_timestamp,
-#		"FAILED_QUEUE_Len": len(FAILED_QUEUE),
-#		"TRACCAR_REPORT_INTERVAL": TRACCAR_REPORT_INTERVAL
-#	}
-#	return data
 
 @app.get("/traccar_status")
 async def traccar_status():
