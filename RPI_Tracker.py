@@ -21,40 +21,40 @@ config.read(CONFIG_FILE)
 # ---------------- GPIO / MockGPIO ----------------
 # ---------------- GPIO / MockGPIO ----------------
 class MockGPIO:
-    BCM = BOARD = IN = OUT = HIGH = LOW = None
+	BCM = BOARD = IN = OUT = HIGH = LOW = None
 
-    @staticmethod
-    def setwarnings(*args, **kwargs): pass
-    @staticmethod
-    def setmode(*args, **kwargs): pass
-    @staticmethod
-    def setup(*args, **kwargs): pass
-    @staticmethod
-    def input(*args, **kwargs): return 0
-    @staticmethod
-    def output(*args, **kwargs): pass
-    @staticmethod
-    def cleanup(*args, **kwargs): pass
+	@staticmethod
+	def setwarnings(*args, **kwargs): pass
+	@staticmethod
+	def setmode(*args, **kwargs): pass
+	@staticmethod
+	def setup(*args, **kwargs): pass
+	@staticmethod
+	def input(*args, **kwargs): return 0
+	@staticmethod
+	def output(*args, **kwargs): pass
+	@staticmethod
+	def cleanup(*args, **kwargs): pass
 
 try:
-    import RPi.GPIO as GPIO
-    try:
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setwarnings(False)
+	import RPi.GPIO as GPIO
+	try:
+		GPIO.setmode(GPIO.BCM)
+		GPIO.setwarnings(False)
 
-        GPIO_STARTUP_PIN = 21
-        GPIO_LOG_ERROR_PIN = 16
-        GPIO.setup(GPIO_STARTUP_PIN, GPIO.OUT)
-        GPIO.setup(GPIO_LOG_ERROR_PIN, GPIO.OUT)
+		GPIO_STARTUP_PIN = 21
+		GPIO_LOG_ERROR_PIN = 16
+		GPIO.setup(GPIO_STARTUP_PIN, GPIO.OUT)
+		GPIO.setup(GPIO_LOG_ERROR_PIN, GPIO.OUT)
 
-        GPIO.output(GPIO_STARTUP_PIN, True)
-    except RuntimeError as e:
-        # 典型：Cannot determine SOC peripheral base address
-        print(f"[GPIO] RPi.GPIO init failed, fallback to MockGPIO: {e}")
-        GPIO = MockGPIO()
+		GPIO.output(GPIO_STARTUP_PIN, True)
+	except RuntimeError as e:
+		# 典型：Cannot determine SOC peripheral base address
+		print(f"[GPIO] RPi.GPIO init failed, fallback to MockGPIO: {e}")
+		GPIO = MockGPIO()
 except (ImportError, ModuleNotFoundError) as e:
-    print(f"[GPIO] RPi.GPIO not available, fallback to MockGPIO: {e}")
-    GPIO = MockGPIO()
+	print(f"[GPIO] RPi.GPIO not available, fallback to MockGPIO: {e}")
+	GPIO = MockGPIO()
 
 
 # ---------------- FastAPI & 模板 ----------------
@@ -62,7 +62,7 @@ app = FastAPI()
 templates = Jinja2Templates(directory="web_templates")
 
 # 如果有静态资源，可以这样挂载（按需）
-# app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory="web_templates"), name="static")
 
 # ---------------- GPSD 连接和全局配置 ----------------
 gps_socket = gps3.GPSDSocket()
@@ -110,7 +110,7 @@ def update_gps_data():
 	while True:
 		for new_data in gps_socket:
 			if not new_data:
-				time.sleep(0.05)
+				time.sleep(0.01)
 				continue
 
 			# gps3 可能给的是 bytes，也可能是 str，先统一成 str
@@ -119,9 +119,10 @@ def update_gps_data():
 
 			# 追加到缓冲区
 			buffer += new_data
-
+			made_progress = False
 			# 只在缓冲里有换行时才做拆分
 			while "\n" in buffer:
+				made_progress = True
 				line, buffer = buffer.split("\n", 1)
 				line = line.strip()
 				if not line or line[:1]!="{":
@@ -155,6 +156,7 @@ def update_gps_data():
 						gps_data_cache['SNR']['sat_map']=last_sat_map
 						gps_data_cache['SNR']['satellites'] = list(gps_data_cache['SNR']['sat_map'].values())
 						#print(gps_data_cache['SNR']['satellites'])
+						continue
 					except Exception as e:
 						print("SNR/SKY Err:", e)	
 
@@ -207,9 +209,11 @@ def update_gps_data():
 						gps_data_cache['Path']['speed'] = max(
 							(round(gps_data_cache['Path']['speed'] / step) * step), 0.5
 						)
+						continue
 					except Exception as e:
-						print("TPV Err:", e)			
-		time.sleep(0.5)
+						print("TPV Err:", e)	
+			if not made_progress:
+					time.sleep(0.01)		
 
 # ---------------- 后台线程：上报线程状态 ----------------
 def update_report_status():
