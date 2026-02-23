@@ -13,6 +13,8 @@ import subprocess
 from gps3 import gps3
 from datetime import datetime
 
+from utils.utils import save_log
+
 # ---------------- 配置读取 ----------------
 CONFIG_FILE = '/etc/GPS_config.ini'
 config = configparser.ConfigParser()
@@ -97,7 +99,7 @@ gps_data_cache = {
 	'TPV': {},
 	'Path': {},
 	'status_data': {},
-	"TPV_Raw_data": None
+	"TPV_Raw_data": {}
 }
 
 # ---------------- 后台线程：GPS 数据 ----------------
@@ -126,6 +128,9 @@ def update_gps_data():
 				# 迭代过程中可能一直给空数据：用超时判定断线/卡死
 				if not new_data:
 					if time.time() - last_data_ts > NO_DATA_TIMEOUT:
+						#清空缓存
+						gps_data_cache["SNR"] = {'satellites': [],'sat_map': {}}
+						gps_data_cache["TPV_Raw_data"] = {}
 						raise ConnectionError(f"[GPSd]gpsd no data in {NO_DATA_TIMEOUT}s. Reconnecting..")
 					time.sleep(0.01)
 					continue
@@ -149,8 +154,8 @@ def update_gps_data():
 					try:
 						data_json=json.loads(line)
 					except Exception as e:
-						print("[GPSd]unpack error:", e)
-						print("[GPSd]bad line:", repr(line))
+						save_log("[GPSd]unpack error:", e)
+						save_log("[GPSd]bad line:", repr(line))
 						continue
 	
 					# SNR / SKY
@@ -177,7 +182,7 @@ def update_gps_data():
 							#print(gps_data_cache['SNR']['satellites'])
 							continue
 						except Exception as e:
-							print("[GPSd]SNR/SKY Err:", e)	
+							save_log("[GPSd]SNR/SKY Err:", e)	
 	
 					# TPV
 					if data_json.get('class') == 'TPV':
@@ -230,12 +235,12 @@ def update_gps_data():
 							)
 							continue
 						except Exception as e:
-							print("[GPSd]TPV Err:", e)	
+							save_log("[GPSd]TPV Err:", e)	
 				if not made_progress:
 						time.sleep(0.01)	
 		except Exception as e:
 			time.sleep(0.1)
-			print(e)
+			save_log(e)
 
 # ---------------- 后台线程：上报线程状态 ----------------
 def update_report_status():

@@ -119,7 +119,7 @@ def aprs_report():
 				GNSS_Type = status_map.get(GPSd_raw_data.get('status', 0), "UNKNOWN")
 
 				frame_text=(f'{SSID}>PYTHON,TCPIP*,qAC,{SSID}:!{lat}{lat_dir}/{lon}{lon_dir}{SSID_ICON}{course}/{speed}/A={altitude} APRS by RPI with GNSS {GNSS_Type} at UTC {NMEA_timestamp} {Message}').encode()
-				print(frame_text)
+				save_log(frame_text)
 				callsign = CALLSIGN.encode('utf-8')
 				password = APRS_PASSWORD.encode('utf-8')
 				
