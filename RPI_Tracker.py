@@ -65,12 +65,9 @@ templates = Jinja2Templates(directory="web_templates")
 app.mount("/static", StaticFiles(directory="web_templates"), name="static")
 
 # ---------------- GPSD 连接和全局配置 ----------------
-gps_socket = gps3.GPSDSocket()
-data_stream = gps3.DataStream()
+
 GPSd_host = config['GPS_Config']['GPSd_host']
 GPSd_port = config['GPS_Config']['GPSd_port']
-gps_socket.connect(host=GPSd_host, port=GPSd_port)
-gps_socket.watch(enable=True, gpsd_protocol='json')
 SERVICE_NAME = "RPI_Tracker.service"
 
 # ---------------- 数据结构与工具函数 ----------------
@@ -104,116 +101,141 @@ gps_data_cache = {
 }
 
 # ---------------- 后台线程：GPS 数据 ----------------
-
 def update_gps_data():
 	buffer = ""
+	backoff = 1
+
+	NO_DATA_TIMEOUT = 5 # 秒：多久没收到任何数据就重连
+
 	while True:
-		for new_data in gps_socket:
-			if not new_data:
-				time.sleep(0.01)
-				continue
+		#顶层循环保证gps_socket异常后重连
+		try:
+			buffer = ""
+			NO_DATA_TIME=0
+			gps_socket = gps3.GPSDSocket()
+			gps_socket.connect(host=GPSd_host, port=GPSd_port)
+			gps_socket.watch(enable=True, gpsd_protocol='json')
 
-			# gps3 可能给的是 bytes，也可能是 str，先统一成 str
-			if isinstance(new_data, bytes):
-				new_data = new_data.decode("utf-8", errors="ignore")
+			# 连接成功：重置状态
+			backoff = 1
+			buffer = ""
+			last_data_ts = time.time()
 
-			# 追加到缓冲区
-			buffer += new_data
-			made_progress = False
-			# 只在缓冲里有换行时才做拆分
-			while "\n" in buffer:
-				made_progress = True
-				line, buffer = buffer.split("\n", 1)
-				line = line.strip()
-				if not line or line[:1]!="{":
+			for new_data in gps_socket:
+				#for循环持续获取gps_socket流
+				# 迭代过程中可能一直给空数据：用超时判定断线/卡死
+				if not new_data:
+					if time.time() - last_data_ts > NO_DATA_TIMEOUT:
+						raise ConnectionError(f"[GPSd]gpsd no data in {NO_DATA_TIMEOUT}s. Reconnecting..")
+					time.sleep(0.01)
 					continue
-				try:
-					data_json=json.loads(line)
-				except Exception as e:
-					print("unpack error:", e)
-					print("bad line:", repr(line))
-					continue
+				last_data_ts = time.time()
 
-				# SNR / SKY
-				if data_json.get('class') == 'SKY' and 'satellites' in data_json:
+				# gps3 可能给的是 bytes，也可能是 str，先统一成 str
+				if isinstance(new_data, bytes):
+					new_data = new_data.decode("utf-8", errors="ignore")
+
+				# 追加到缓冲区
+				buffer += new_data
+				made_progress = False
+				
+				while "\n" in buffer:
+					#循环取出buffer中/n分割前的内容，只在缓冲里有换行时才做拆分
+					made_progress = True
+					line, buffer = buffer.split("\n", 1)
+					line = line.strip()
+					if not line or line[:1]!="{":
+						continue
 					try:
-						now_ts = time.time()
-						for i in data_json['satellites']:
-							prn = get_constellation(i['PRN'])
-							gps_data_cache['SNR']['sat_map'][prn] = {
-								'PRN': prn,
-								'ss': i.get('ss', 0),
-								'used': i.get('used', False),
-								'last_seen': now_ts,
+						data_json=json.loads(line)
+					except Exception as e:
+						print("[GPSd]unpack error:", e)
+						print("[GPSd]bad line:", repr(line))
+						continue
+	
+					# SNR / SKY
+					if data_json.get('class') == 'SKY' and 'satellites' in data_json:
+						try:
+							now_ts = time.time()
+							for i in data_json['satellites']:
+								prn = get_constellation(i['PRN'])
+								gps_data_cache['SNR']['sat_map'][prn] = {
+									'PRN': prn,
+									'ss': i.get('ss', 0),
+									'used': i.get('used', False),
+									'last_seen': now_ts,
+								}
+						
+		
+							EXPIRE_SECONDS = 60
+							last_sat_map= {
+								prn: sat for prn, sat in gps_data_cache['SNR']['sat_map'].items()
+								if now_ts - sat['last_seen'] <= EXPIRE_SECONDS
 							}
-					
+							gps_data_cache['SNR']['sat_map']=last_sat_map
+							gps_data_cache['SNR']['satellites'] = list(gps_data_cache['SNR']['sat_map'].values())
+							#print(gps_data_cache['SNR']['satellites'])
+							continue
+						except Exception as e:
+							print("[GPSd]SNR/SKY Err:", e)	
 	
-						EXPIRE_SECONDS = 60
-						last_sat_map= {
-							prn: sat for prn, sat in gps_data_cache['SNR']['sat_map'].items()
-							if now_ts - sat['last_seen'] <= EXPIRE_SECONDS
-						}
-						gps_data_cache['SNR']['sat_map']=last_sat_map
-						gps_data_cache['SNR']['satellites'] = list(gps_data_cache['SNR']['sat_map'].values())
-						#print(gps_data_cache['SNR']['satellites'])
-						continue
-					except Exception as e:
-						print("SNR/SKY Err:", e)	
-
-				# TPV
-				if data_json.get('class') == 'TPV':
-					try:
-						status_data = {}
-						status_data['Sat_Qty'] = len(gps_data_cache['SNR']['satellites'])
-						gps_data_cache['TPV_Raw_data'] = data_json
-						gps_data_cache['TPV_Raw_data']['Sat_Qty'] = len(gps_data_cache['SNR']['satellites'])
-	
-						for i in ['alt', 'track', 'magtrack', 'magvar', 'time', 'speed']:
-							if i in data_json:
-								status_data[i] = data_json[i]
+					# TPV
+					if data_json.get('class') == 'TPV':
+						try:
+							status_data = {}
+							status_data['Sat_Qty'] = len(gps_data_cache['SNR']['satellites'])
+							gps_data_cache['TPV_Raw_data'] = data_json
+							gps_data_cache['TPV_Raw_data']['Sat_Qty'] = len(gps_data_cache['SNR']['satellites'])
+		
+							for i in ['alt', 'track', 'magtrack', 'magvar', 'time', 'speed']:
+								if i in data_json:
+									status_data[i] = data_json[i]
+								else:
+									status_data[i] = 0
+		
+							mode_map = {0: "Unknown",1: "no fix",2: "Normal Mode 2D",3: "Normal Mode 3D",}
+							status_map = {0: "Unknown",1: "Normal",2: "DGPS",3: "RTK FIX",4: "RTK FLOAT",5: "DR FIX",6: "GNSSDR",7: "Time (surveyed)",8: "Simulated",9: "P(Y)",}
+		
+							if data_json.get('status', 1) == 1:
+								status_data['status'] = mode_map.get(
+									data_json.get('mode', 0), "Unknown"
+								)
 							else:
-								status_data[i] = 0
-	
-						mode_map = {0: "Unknown",1: "no fix",2: "Normal Mode 2D",3: "Normal Mode 3D",}
-						status_map = {0: "Unknown",1: "Normal",2: "DGPS",3: "RTK FIX",4: "RTK FLOAT",5: "DR FIX",6: "GNSSDR",7: "Time (surveyed)",8: "Simulated",9: "P(Y)",}
-	
-						if data_json.get('status', 1) == 1:
-							status_data['status'] = mode_map.get(
-								data_json.get('mode', 0), "Unknown"
+								status_data['status'] = status_map.get(
+									data_json.get('status', 1), "Unknown"
+								)
+		
+							# 米/秒 -> km/h
+							status_data['speed'] = "%.2f" % (status_data['speed'] * 3.6)
+		
+							if status_data['time'] != 0:
+								status_data['time'] = datetime.fromisoformat(
+									status_data['time'].replace('Z', '+00:00')
+								).strftime('%Y-%m-%d %H:%M:%S')
+		
+							gps_data_cache['TPV'] = status_data
+		
+		
+							# Path
+							for i in ['lat', 'lon', 'speed']:
+								if i in data_json:
+									gps_data_cache['Path'][i] = data_json[i]
+		
+							# speed 阶梯化
+							step = 5
+							if 'speed' not in gps_data_cache['Path']:
+								gps_data_cache['Path']['speed'] = 0
+							gps_data_cache['Path']['speed'] = max(
+								(round(gps_data_cache['Path']['speed'] / step) * step), 0.5
 							)
-						else:
-							status_data['status'] = status_map.get(
-								data_json.get('status', 1), "Unknown"
-							)
-	
-						# 米/秒 -> km/h
-						status_data['speed'] = "%.2f" % (status_data['speed'] * 3.6)
-	
-						if status_data['time'] != 0:
-							status_data['time'] = datetime.fromisoformat(
-								status_data['time'].replace('Z', '+00:00')
-							).strftime('%Y-%m-%d %H:%M:%S')
-	
-						gps_data_cache['TPV'] = status_data
-	
-	
-						# Path
-						for i in ['lat', 'lon', 'speed']:
-							if i in data_json:
-								gps_data_cache['Path'][i] = data_json[i]
-	
-						# speed 阶梯化
-						step = 5
-						if 'speed' not in gps_data_cache['Path']:
-							gps_data_cache['Path']['speed'] = 0
-						gps_data_cache['Path']['speed'] = max(
-							(round(gps_data_cache['Path']['speed'] / step) * step), 0.5
-						)
-						continue
-					except Exception as e:
-						print("TPV Err:", e)	
-			if not made_progress:
-					time.sleep(0.01)		
+							continue
+						except Exception as e:
+							print("[GPSd]TPV Err:", e)	
+				if not made_progress:
+						time.sleep(0.01)	
+		except Exception as e:
+			time.sleep(0.1)
+			print(e)
 
 # ---------------- 后台线程：上报线程状态 ----------------
 def update_report_status():
