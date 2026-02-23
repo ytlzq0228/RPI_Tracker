@@ -76,7 +76,7 @@ def aprs_report():
 				report_APRS_timestamp=current_timestamp
 				#lat, lat_dir,lon,lon_dir,altitude,NMEA_timestamp,speed,course,GNSS_Type,lat_raw,lon_raw,GPS_Source,GPSd_raw_data
 				if "lat" not in GPSd_raw_data or "lon" not in GPSd_raw_data:
-					print("APRS None")
+					#print("APRS None")
 					time.sleep(1)
 					continue
 				# 纬度转换
