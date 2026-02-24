@@ -12,7 +12,7 @@ CONFIG_FILE = '/etc/GPS_config.ini'
 config = configparser.ConfigParser()
 config.read(CONFIG_FILE)
 
-LOG_FILE_PATH = config['SYNO_Config']['LOCAL_LOG_FILE_PATH']	  # 本地目录
+LOG_FILE_PATH = config['SYNO_Config']['local_update_path']	  # 本地目录
 NAS = config['SYNO_Config']['remote_host'].rstrip('/')			# 例如 https://nas.ctsdn.com:5001
 USER = config['SYNO_Config']['remote_user']
 PASS = config['SYNO_Config']['remote_pass']
