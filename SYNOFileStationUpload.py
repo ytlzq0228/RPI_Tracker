@@ -211,11 +211,11 @@ def dsm_upload_files():
 					do_upload = should_upload(local_file, remote_dir_cache[remote_dir], local_file_name)
 	
 				if not do_upload:
-					#print(f"SKIP  {relative_file_path} (no change)")
+					print(f"SKIP  {relative_file_path} (no change)")
 					skipped += 1
 					continue
 	
-				#print(f"UPLOAD {relative_file_path} -> {remote_dir}/")
+				print(f"UPLOAD {relative_file_path} -> {remote_dir}/")
 				resp = upload_file(s, sid, local_file, remote_dir)
 	
 				if resp.get("success"):
