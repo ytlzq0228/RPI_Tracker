@@ -215,7 +215,7 @@ def dsm_upload_files():
 					skipped += 1
 					continue
 	
-				print(f"UPLOAD {relative_file_path} -> {remote_dir}/")
+				save_log(f"UPLOAD {relative_file_path} -> {remote_dir}/")
 				resp = upload_file(s, sid, local_file, remote_dir)
 	
 				if resp.get("success"):
@@ -228,7 +228,7 @@ def dsm_upload_files():
 						pass
 				else:
 					failed += 1
-					print("  upload failed:", resp)
+					save_log("  upload failed:", resp)
 	
 			save_log(f"Done. uploaded={uploaded}, skipped={skipped}, failed={failed}")
 	
