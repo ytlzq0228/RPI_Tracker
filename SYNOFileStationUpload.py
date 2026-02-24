@@ -228,7 +228,7 @@ def dsm_upload_files():
 						pass
 				else:
 					failed += 1
-					save_log("  upload failed:", resp)
+					save_log(f"upload failed:{resp}")
 	
 			save_log(f"Done. uploaded={uploaded}, skipped={skipped}, failed={failed}")
 	
