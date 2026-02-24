@@ -26,24 +26,15 @@ INCREMENTAL_UPDATE = True		# True: 做增量判断
 DRY_RUN = False		   # True: 只打印不上传
 
 # 超时
-TIMEOUT_GET = 20
-TIMEOUT_POST = 120
-WAIT_CYCLE = 60
+TIMEOUT_GET = (10)
+TIMEOUT_POST = (1800)
+WAIT_CYCLE = 5
 
 # ---------------- DSM WebAPI 帮助函数 ----------------
 def api_get(session: requests.Session, url: str, params: Dict, verify) -> Dict:
 	r = session.get(url, params=params, verify=verify, timeout=TIMEOUT_GET)
 	r.raise_for_status()
 	return r.json()
-
-def api_post(session: requests.Session, url: str, params: Dict, data: Dict, files: Dict, verify) -> Dict:
-	r = session.post(url, params=params, data=data, files=files, verify=verify, timeout=TIMEOUT_POST)
-	r.raise_for_status()
-	# 有时 DSM 返回 text/plain，也可能是 JSON 字符串
-	try:
-		return r.json()
-	except Exception:
-		return {"success": False, "raw": r.text}
 
 def login(session: requests.Session) -> str:
 	auth_url = f"{NAS}/webapi/auth.cgi"
@@ -73,13 +64,13 @@ def logout(session: requests.Session, sid: str) -> None:
 	try:
 		j = api_get(session, auth_url, params, VERIFY_TLS)
 		# 不强制要求成功
-		save_log(f"logout:{j}")
+		save_log(f"[FILE COPY]logout:{j}")
 	except Exception as e:
-		save_log(f"logout error:{e}")
+		save_log(f"[FILE COPY]logout error:{e}")
 
 def upload_file(session: requests.Session, sid: str, local_file: Path, remote_dir: str) -> Dict:
 	upload_url = f"{NAS}/webapi/entry.cgi"
-	query = {
+	params = {
 		"api": "SYNO.FileStation.Upload",
 		"version": "2",
 		"method": "upload",
@@ -96,7 +87,12 @@ def upload_file(session: requests.Session, sid: str, local_file: Path, remote_di
 
 	with local_file.open("rb") as f:
 		files = {"file": (local_file.name, f, "application/octet-stream")}
-		return api_post(session, upload_url, query, data, files, VERIFY_TLS)
+		r = session.post(upload_url, params=params, data=data, files=files, verify=VERIFY_TLS, timeout=TIMEOUT_POST)
+		r.raise_for_status()
+		try:
+			return r.json()
+		except Exception:
+			return {"success": False, "raw": r.text}
 
 # ---------------- 远端信息查询（用于增量判断） ----------------
 def build_remote_index(session: requests.Session, sid: str, remote_root: str) -> Dict[str, Tuple[int, int]]:
@@ -185,7 +181,7 @@ def dsm_upload_files():
 	while True:
 		try:
 			sid = login(s)
-			save_log(f"{NAS} login success, sid:{sid[:4]}*****{sid[-4:]}")
+			save_log(f"[FILE COPY]{NAS} login success, sid:{sid[:4]}*****{sid[-4:]}")
 	
 			local_files_list = iter_local_files(local_log_base_dir, recursive=RECURSIVE)
 			if not local_files_list:
@@ -215,7 +211,7 @@ def dsm_upload_files():
 					skipped += 1
 					continue
 	
-				save_log(f"UPLOAD {relative_file_path} -> {remote_dir}/")
+				save_log(f"[FILE COPY]UPLOAD {relative_file_path} -> {remote_dir}/")
 				resp = upload_file(s, sid, local_file, remote_dir)
 	
 				if resp.get("success"):
@@ -228,10 +224,11 @@ def dsm_upload_files():
 						pass
 				else:
 					failed += 1
-					save_log(f"upload failed:{resp}")
+					save_log(f"[FILE COPY]upload {relative_file_path} failed:{resp}")
 	
-			save_log(f"Done. uploaded={uploaded}, skipped={skipped}, failed={failed}")
-	
+			save_log(f"[FILE COPY]Done. uploaded={uploaded}, skipped={skipped}, failed={failed}")
+		except Exception as e:
+			save_log(f"[FILE COPY]upload error {e}")
 		finally:
 			if sid:
 				logout(s, sid)
