@@ -9,7 +9,7 @@ CONFIG_FILE='/etc/GPS_config.ini'
 config = configparser.ConfigParser()
 config.read(CONFIG_FILE)
 
-LOG_FILE_PATH=config['SFTP_Config']['LOCAL_LOG_FILE_PATH']
+LOG_FILE_PATH=config['SYNO_Config']['LOCAL_LOG_FILE_PATH']
 SSID=config['APRS_Config']['SSID']
 
 

@@ -15,15 +15,15 @@ aprs_report_interval = 30
 oled_enable = False
 oled_address = 0x3c
 
-[SFTP_Config]
+[SYNO_Config]
 local_log_file_path = /mnt/usb
 nmea_log_interval = 2
 still_log_interval = 120
 still_speed_threshold = 0
-remote_user = pi-star
-remote_host = nas.ctsdn.com
-remote_dir = /volume1/Storage/Su7-GPS-PATH/RPI_APRS_Log
-remote_port = 22
+remote_user = username
+remote_host = https://nas.synology.com
+remote_dir = /Storage
+remote_pass = password
 
 [GPS_Config]
 gps_device = GPSd

@@ -42,9 +42,9 @@ GPS_Device=config['GPS_Config']['GPS_Device']
 Radio_CONTROL_ENABLE=config['GPIO_CONTROL']['enable']
 GPIO_PIN=int(config['GPIO_CONTROL']['GPIO_PIN'])
 APRS_REPORT_INTERVAL=int(config['APRS_Config']['APRS_REPORT_INTERVAL'])
-NMEA_LOG_INTERVAL=int(config['SFTP_Config']['NMEA_LOG_INTERVAL'])
-STILL_LOG_INTERVAL=int(config['SFTP_Config']['STILL_LOG_INTERVAL'])
-STILL_SPEED_THRESHOLD=int(config['SFTP_Config']['STILL_SPEED_THRESHOLD'])
+NMEA_LOG_INTERVAL=int(config['SYNO_Config']['NMEA_LOG_INTERVAL'])
+STILL_LOG_INTERVAL=int(config['SYNO_Config']['STILL_LOG_INTERVAL'])
+STILL_SPEED_THRESHOLD=int(config['SYNO_Config']['STILL_SPEED_THRESHOLD'])
 
 save_log(f"APRS Repoeter {VERSION} Starting...")
 save_log("APRS Get Config Params:")

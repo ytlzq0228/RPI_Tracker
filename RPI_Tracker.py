@@ -14,6 +14,7 @@ from gps3 import gps3
 from datetime import datetime
 
 from utils.utils import save_log
+from SYNOFileStationUpload import dsm_upload_files
 
 # ---------------- 配置读取 ----------------
 CONFIG_FILE = '/etc/GPS_config.ini'
@@ -304,6 +305,7 @@ def startup_event():
 	threading.Thread(target=update_report_status, daemon=True).start()
 	threading.Thread(target=traccar_report_app, daemon=True).start()
 	threading.Thread(target=aprs_report_app, daemon=True).start()
+	threading.Thread(target=dsm_upload_files, daemon=True).start()
 
 
 
