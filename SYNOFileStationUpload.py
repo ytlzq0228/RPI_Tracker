@@ -3,6 +3,7 @@ import time
 import json
 import requests
 import configparser
+from requests.exceptions import RequestException
 from pathlib import Path
 from typing import Dict, Optional, Tuple, List
 from utils.utils import save_log
