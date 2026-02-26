@@ -26,9 +26,13 @@ INCREMENTAL_UPDATE = True		# True: 做增量判断
 DRY_RUN = False		   # True: 只打印不上传
 
 # 超时
-TIMEOUT_GET = (10)
-TIMEOUT_POST = (1800)
+TIMEOUT_GET = 10
+TIMEOUT_POST = 1800
 WAIT_CYCLE = 5
+
+
+MAX_RETRY_PER_FILE = 3
+REMOTE_INDEX_TTL = 60  # 秒，避免每 5 秒都 list 远端
 
 # ---------------- DSM WebAPI 帮助函数 ----------------
 def api_get(session: requests.Session, url: str, params: Dict, verify) -> Dict:
@@ -132,19 +136,10 @@ def build_remote_index(session: requests.Session, sid: str, remote_root: str) ->
 
 # ---------------- 本地遍历与映射 ----------------
 def iter_local_files(base_dir: Path, recursive: bool = True) -> List[Path]:
-	base_dir = base_dir.resolve()
 	if recursive:
 		return [p for p in base_dir.rglob("*") if p.is_file()]
 	else:
-		return [p for p in base_dir.iteremote_dir() if p.is_file()]
-
-def remote_dir_for_file(remote_root: str, rel_path: str) -> str:
-	# rel_path 可能是 a/b/c.log，远端目录要到 a/b
-	parts = rel_path.split("/")
-	if len(parts) <= 1:
-		return remote_root
-	subdir = "/".join(parts[:-1])
-	return f"{remote_root}/{subdir}".replace("//", "/")
+		return [p for p in base_dir.iterdir() if p.is_file()]
 
 def should_upload(local_file: Path, remote_idx: Dict[str, Tuple[int, int]], filename: str) -> bool:
 	"""
@@ -170,6 +165,17 @@ def should_upload(local_file: Path, remote_idx: Dict[str, Tuple[int, int]], file
 
 	return False
 
+def upload_with_retry(session, sid, local_file, remote_dir):
+	last_exc = None
+	for i in range(1, MAX_RETRY_PER_FILE + 1):
+		try:
+			return upload_file(session, sid, local_file, remote_dir)
+		except RequestException as e:
+			last_exc = e
+			save_log(f"[FILE COPY]upload exception retry {i}/{MAX_RETRY_PER_FILE} file={local_file.name} err={e}")
+			time.sleep(min(2 ** i, 30))
+	raise last_exc
+
 # ---------------- 主流程 ----------------
 def dsm_upload_files():
 	local_log_base_dir = Path(LOG_FILE_PATH)
@@ -177,61 +183,84 @@ def dsm_upload_files():
 		raise RuntimeError(f"LOG_FILE_PATH not a directory: {local_log_base_dir}")
 
 	s = requests.Session()
-	sid = None
+	sid = login(s)
+	save_log(f"[FILE COPY]{NAS} login success, sid:{sid[:4]}*****{sid[-4:]}")
+
+	# 远端索引缓存：remote_dir -> (ts, idx)
+	remote_dir_cache: Dict[str, Tuple[float, Dict[str, Tuple[int, int]]]] = {}
+
 	while True:
 		try:
-			sid = login(s)
-			save_log(f"[FILE COPY]{NAS} login success, sid:{sid[:4]}*****{sid[-4:]}")
-	
 			local_files_list = iter_local_files(local_log_base_dir, recursive=RECURSIVE)
 			if not local_files_list:
-				print("No files found under:", local_log_base_dir)
-				return
-			
-			uploaded = 0
-			skipped = 0
-			failed = 0
-	
-			# 缓存：每个远端目录建立一次索引（仅该目录这一层）
-			remote_dir_cache: Dict[str, Dict[str, Tuple[int, int]]] = {}
+				time.sleep(WAIT_CYCLE)
+				continue
+
+			uploaded = skipped = failed = 0
+
 			for local_file in sorted(local_files_list):
-				relative_file_path =  str(local_file.resolve().relative_to(local_log_base_dir.resolve()))
-				remote_dir = remote_dir_for_file(REMOTE_FILE_PATH, relative_file_path)
-				local_file_name = local_file.name
-	
-				do_upload = True
-				if INCREMENTAL_UPDATE:
-					if remote_dir not in remote_dir_cache:
-						idx = build_remote_index(s, sid, remote_dir)
-						remote_dir_cache[remote_dir] = idx
-					do_upload = should_upload(local_file, remote_dir_cache[remote_dir], local_file_name)
-	
-				if not do_upload:
-					#print(f"SKIP  {relative_file_path} (no change)")
-					skipped += 1
+				# 过滤无用文件
+				if local_file.name == ".DS_Store":
 					continue
-	
-				save_log(f"[FILE COPY]UPLOAD {relative_file_path} -> {remote_dir}/")
-				resp = upload_file(s, sid, local_file, remote_dir)
-	
+
+				# Pi 环境：Path 原生相对路径 + posix
+				rel = local_file.relative_to(local_log_base_dir)   # Path
+				remote_dir = (Path(REMOTE_FILE_PATH) / rel.parent).as_posix()
+				local_file_name = local_file.name
+
+				# 增量：按 remote_dir 获取缓存（带 TTL）
+				if INCREMENTAL_UPDATE:
+					ts_idx = remote_dir_cache.get(remote_dir)
+					if (ts_idx is None) or (time.time() - ts_idx[0] > REMOTE_INDEX_TTL):
+						idx = build_remote_index(s, sid, remote_dir)
+						remote_dir_cache[remote_dir] = (time.time(), idx)
+					remote_idx = remote_dir_cache[remote_dir][1]
+
+					if not should_upload(local_file, remote_idx, local_file_name):
+						skipped += 1
+						continue
+
+				save_log(f"[FILE COPY]UPLOAD {rel.as_posix()} -> {remote_dir}/")
+
+				# 先尝试上传（带异常重试）
+				try:
+					resp = upload_with_retry(s, sid, local_file, remote_dir)
+				except Exception as e:
+					failed += 1
+					save_log(f"[FILE COPY]upload {rel.as_posix()} exception: {e}")
+					continue
+
+				# 如果返回 119：重登 + 立即重试一次
+				if (not resp.get("success")) and resp.get("error", {}).get("code") == 119:
+					save_log(f"[FILE COPY]SID invalid(119), relogin and retry once. old sid:{sid[:4]}*****{sid[-4:]}")
+					sid = login(s)
+					save_log(f"[FILE COPY]{NAS} relogin success, sid:{sid[:4]}*****{sid[-4:]}")
+
+					try:
+						resp = upload_with_retry(s, sid, local_file, remote_dir)
+					except Exception as e:
+						failed += 1
+						save_log(f"[FILE COPY]upload after relogin failed {rel.as_posix()} exception: {e}")
+						continue
+
 				if resp.get("success"):
 					uploaded += 1
-					# 上传成功后，更新缓存索引，避免同目录重复 list
-					try:
+					# 更新本目录缓存，避免下一次又传
+					if INCREMENTAL_UPDATE:
 						st = local_file.stat()
-						remote_dir_cache.setdefault(remote_dir, {})[local_file_name] = (int(st.st_size), int(time.time()))
-					except Exception:
-						pass
+						ts, idx = remote_dir_cache.get(remote_dir, (time.time(), {}))
+						idx[local_file_name] = (int(st.st_size), int(time.time()))
+						remote_dir_cache[remote_dir] = (ts, idx)
 				else:
 					failed += 1
-					save_log(f"[FILE COPY]upload {relative_file_path} failed:{resp}")
-	
+					save_log(f"[FILE COPY]upload {rel.as_posix()} failed resp:{resp}")
+
 			save_log(f"[FILE COPY]Done. uploaded={uploaded}, skipped={skipped}, failed={failed}")
+
 		except Exception as e:
-			save_log(f"[FILE COPY]upload error {e}")
+			save_log(f"[FILE COPY]loop error {e}")
+
 		finally:
-			if sid:
-				logout(s, sid)
 			time.sleep(WAIT_CYCLE)
 
 if __name__ == "__main__":
