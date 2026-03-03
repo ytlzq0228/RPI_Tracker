@@ -24,6 +24,26 @@ config.read(CONFIG_FILE)
 # ----------------------------
 # 可调参数（按车载常用）
 # ----------------------------
+
+IMU_ENABLE = config.getboolean('IMU_Config', 'enable')
+BLE_MAC = config['GPS_Config']['BLE_MAC']
+
+# 是否在事件里携带原始片段
+INCLUDE_RAW_SEGMENT_IN_EVENT = config.getboolean('IMU_Config', 'INCLUDE_RAW_SEGMENT_IN_EVENT')
+EVENT_PRE_SEC = int(config['IMU_Config']['EVENT_PRE_SEC'])
+EVENT_POST_SEC = int(config['IMU_Config']['EVENT_POST_SEC'])
+
+# 事件阈值
+TH_BRAKE_MPS2 = float(config['IMU_Config']['TH_BRAKE_MPS2'])				# 急刹：纵向线加速度 < -3 m/s^2（持续判定另做）
+TH_ACCEL_MPS2 = float(config['IMU_Config']['TH_ACCEL_MPS2'])				# 急加：纵向线加速度 > +2.5 m/s^2
+TH_TURN_MPS2 =  float(config['IMU_Config']['TH_TURN_MPS2'])					# 急转：横向线加速度 |ay| > 3
+TH_IMPACT_G = float(config['IMU_Config']['TH_IMPACT_G'])				   # 冲击：|a_total| 峰值 > 2.5g （如果你的单位是 m/s^2，会自动换算）
+TH_BUMP_RMS_MPS2 = float(config['IMU_Config']['TH_BUMP_RMS_MPS2'])			  # 颠簸：垂向 RMS > 2 m/s^2（示例）
+
+
+# ----------------------------
+# 固定参数（按车载常用）
+# ----------------------------
 SAMPLE_HZ = 50				  # 20ms 一次
 WINDOW_SEC = 1.0
 WINDOW_N = int(SAMPLE_HZ * WINDOW_SEC)
@@ -31,32 +51,13 @@ WINDOW_N = int(SAMPLE_HZ * WINDOW_SEC)
 RING_SEC = 60				   # 事件回溯缓存长度
 RING_N = int(SAMPLE_HZ * RING_SEC)
 
-# 事件阈值（先给保守默认值，后面你可以按实测调）
-TH_BRAKE_MPS2 = -3.0			# 急刹：纵向线加速度 < -3 m/s^2（持续判定另做）
-TH_ACCEL_MPS2 = +2.5			# 急加：纵向线加速度 > +2.5 m/s^2
-TH_TURN_MPS2 =  +3.0			# 急转：横向线加速度 |ay| > 3
-TH_IMPACT_G = 2.5			   # 冲击：|a_total| 峰值 > 2.5g （如果你的单位是 m/s^2，会自动换算）
-TH_BUMP_RMS_MPS2 = 2.0		  # 颠簸：垂向 RMS > 2 m/s^2（示例）
-
 # “持续”判定（避免单点误报）
 SUSTAIN_MS = 200				# 200ms
 SUSTAIN_N = max(1, int(SAMPLE_HZ * (SUSTAIN_MS / 1000.0)))
 
 # 坐标系映射：你的 aX/aY/aZ 不一定是车体 前/右/上
 # 先按最常见假设：X=前进(纵向)，Y=右(横向)，Z=上(垂向)
-AXIS_MAP = {
-	"long": "aX",   # 纵向（加减速）
-	"lat":  "aY",   # 横向（转弯）
-	"vert": "aZ",   # 垂向（颠簸）
-}
-
-# 是否在事件里携带原始片段（会比较大；你也可以改成只存本地）
-INCLUDE_RAW_SEGMENT_IN_EVENT = True
-EVENT_PRE_SEC = 5
-EVENT_POST_SEC = 10
-
-
-BLE_MAC = "56:D8:18:8E:D2:FC"
+AXIS_MAP = {"long": "aX","lat":  "aY","vert": "aZ",}
 
 
 
@@ -641,63 +642,81 @@ class BleWorker:
 			pass
 
 
+def get_ble(app: FastAPI) -> BleWorker | None:
+	if not IMU_ENABLE:
+		return None
+	return getattr(app.state, "ble", None)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 	# 启动 BLE worker
-	app.state.ble = BleWorker(mac=BLE_MAC, adapter="hci0")
-	app.state.ble.start()
+	if IMU_ENABLE:
+		app.state.ble = BleWorker(mac=BLE_MAC, adapter="hci0")
+		app.state.ble.start()
+	else:
+		app.state.ble = None
+
 
 	yield
 
 	# 停止 BLE worker
-	try:
-		app.state.ble.stop(timeout=5.0)
-	except Exception:
-		pass
+	if IMU_ENABLE and app.state.ble:
+		try:
+			app.state.ble.stop(timeout=5.0)
+		except Exception:
+			pass
 
 
 app = FastAPI(lifespan=lifespan)
 
-
 @app.get("/imu/latest")
 def imu_latest():
-	ble: BleWorker = getattr(app.state, "ble", None)
+	ble = get_ble(app)
+
 	if not ble:
-		raise HTTPException(503, "BLE worker not started")
+		return {"type": "metrics_1s", "status": "disabled"}
 
 	with ble._lock:
-		return ble.latest_metrics or {"type": "metrics_1s", "status": "no_data"}
+		return ble.latest_metrics or {
+			"type": "metrics_1s",
+			"status": "no_data"
+		}
 
 
 @app.get("/imu/poll")
 def imu_poll(n: int = 10):
-	ble: BleWorker = getattr(app.state, "ble", None)
+	ble = get_ble(app)
+
 	if not ble:
-		raise HTTPException(503, "BLE worker not started")
+		return {"n": 0, "items": []}
 
 	n = max(0, min(n, 200))
 	out = []
+
 	for _ in range(n):
 		try:
 			out.append(ble.metrics_q.get_nowait())
 		except queue.Empty:
 			break
-	return {"n": len(out), "items": out}
 
+	return {"n": len(out), "items": out}
 
 @app.get("/imu/events")
 def imu_events(n: int = 10):
-	ble: BleWorker = getattr(app.state, "ble", None)
+	ble = get_ble(app)
+
 	if not ble:
-		raise HTTPException(503, "BLE worker not started")
+		return {"n": 0, "items": []}
 
 	n = max(0, min(n, 200))
 	out = []
+
 	for _ in range(n):
 		try:
 			out.append(ble.events_q.get_nowait())
 		except queue.Empty:
 			break
+
 	return {"n": len(out), "items": out}
 
 if __name__ == "__main__":

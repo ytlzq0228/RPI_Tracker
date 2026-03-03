@@ -296,8 +296,12 @@ def update_report_status():
 # ---------------- FastAPI 生命周期：启动线程 ----------------
 def traccar_report_app():
 	uvicorn.run("traccar_report:app", host="0.0.0.0", port=5051, reload=False, access_log=False)
+
 def aprs_report_app():
 	uvicorn.run("aprs_report:app", host="0.0.0.0", port=5052, reload=False, access_log=False)
+
+def imu_metrics_ble_app():
+	uvicorn.run("imu_metrics_ble:app", host="0.0.0.0", port=5053, reload=False, access_log=False)
 
 @app.on_event("startup")
 def startup_event():
@@ -305,6 +309,7 @@ def startup_event():
 	threading.Thread(target=update_report_status, daemon=True).start()
 	threading.Thread(target=traccar_report_app, daemon=True).start()
 	threading.Thread(target=aprs_report_app, daemon=True).start()
+	threading.Thread(target=imu_metrics_ble_app, daemon=True).start()
 	threading.Thread(target=dsm_upload_files, daemon=True).start()
 
 

@@ -56,3 +56,14 @@ traccar_report_interval = 1
 still_report_interval = 120
 still_speed_threshold = 0
 
+[IMU_Config]
+enable = False
+BLE_MAC = 56:D8:18:8E:D2:FC
+TH_BRAKE_MPS2 = -3.0
+TH_ACCEL_MPS2 = +2.5
+TH_TURN_MPS2 =  +3.0
+TH_IMPACT_G = 2.5
+TH_BUMP_RMS_MPS2 = 2.0
+INCLUDE_RAW_SEGMENT_IN_EVENT = True
+EVENT_PRE_SEC = 5
+EVENT_POST_SEC = 10
