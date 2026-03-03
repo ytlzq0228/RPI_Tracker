@@ -415,29 +415,29 @@ class MetricsAggregator:
 			"status": "success",
 
 			# 纵向/横向/垂向（1秒统计）
-			"aLong_mean": float(np.mean(long_vals)),
-			"aLong_min": float(np.min(long_vals)),
-			"aLong_max": float(np.max(long_vals)),
-			"aLong_rms": self._rms(long_vals),
-			"aLong_std": self._std(long_vals),
+			"aX_mean": float(np.mean(long_vals)),
+			#"aLong_min": float(np.min(long_vals)),
+			"aX_max": float(np.max(long_vals)),
+			#"aLong_rms": self._rms(long_vals),
+			#"aLong_std": self._std(long_vals),
 
-			"aLat_mean": float(np.mean(lat_vals)),
-			"aLat_min": float(np.min(lat_vals)),
-			"aLat_max": float(np.max(lat_vals)),
-			"aLat_rms": self._rms(lat_vals),
-			"aLat_std": self._std(lat_vals),
+			"aY_mean": float(np.mean(lat_vals)),
+			#"aLat_min": float(np.min(lat_vals)),
+			"aY_max": float(np.max(lat_vals)),
+			#"aLat_rms": self._rms(lat_vals),
+			#"aLat_std": self._std(lat_vals),
 
-			"aVert_mean": float(np.mean(vert_vals)),
-			"aVert_min": float(np.min(vert_vals)),
-			"aVert_max": float(np.max(vert_vals)),
-			"aVert_rms": self._rms(vert_vals),
-			"aVert_std": self._std(vert_vals),
+			"aZ_mean": float(np.mean(vert_vals)),
+			#"aVert_min": float(np.min(vert_vals)),
+			"aZ_max": float(np.max(vert_vals)),
+			#"aVert_rms": self._rms(vert_vals),
+			#"aVert_std": self._std(vert_vals),
 
 			# jerk / yaw rate
-			"jerk_rms": jerk_rms,
+			#"jerk_rms": jerk_rms,
 			"jerk_max": float(np.max(np.abs(jerks)) if jerks else 0.0),
 
-			"gz_rms": self._rms(gz_vals),
+			#"gz_rms": self._rms(gz_vals),
 			"gz_max": float(np.max(np.abs(gz_vals)) if gz_vals else 0.0),
 
 			# 姿态（取末样本；你也可以改成均值/中位数）
@@ -449,9 +449,9 @@ class MetricsAggregator:
 			"bump_index": bump_index,
 
 			# flags + score
-			"flag_harsh_brake": bool(harsh_brake),
-			"flag_harsh_accel": bool(harsh_accel),
-			"flag_sharp_turn": bool(sharp_turn),
+			#"flag_harsh_brake": bool(harsh_brake),
+			#"flag_harsh_accel": bool(harsh_accel),
+			#"flag_sharp_turn": bool(sharp_turn),
 			"score_1s": score,
 		}
 
