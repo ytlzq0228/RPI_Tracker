@@ -26,7 +26,7 @@ config.read(CONFIG_FILE)
 # ----------------------------
 
 IMU_ENABLE = config.getboolean('IMU_Config', 'enable')
-BLE_MAC = config['GPS_Config']['BLE_MAC']
+BLE_MAC = config['IMU_Config']['BLE_MAC']
 
 # 是否在事件里携带原始片段
 INCLUDE_RAW_SEGMENT_IN_EVENT = config.getboolean('IMU_Config', 'INCLUDE_RAW_SEGMENT_IN_EVENT')

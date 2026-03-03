@@ -16,12 +16,13 @@ oled_enable = False
 oled_address = 0x3c
 
 [SYNO_Config]
-local_log_file_path = /mnt/usb
+local_log_file_path = /var/log
+local_update_path = /var/log
 nmea_log_interval = 2
 still_log_interval = 120
 still_speed_threshold = 0
 remote_user = username
-remote_host = https://nas.synology.com
+remote_host = https://nas.ctsdn.com
 remote_dir = /Storage
 remote_pass = password
 
