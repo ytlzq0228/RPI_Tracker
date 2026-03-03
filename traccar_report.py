@@ -90,6 +90,7 @@ def traccar_report():
 				"lon": f"{float(lon):.7f}",
 				"timestamp": ts,
 				"deviceTemp": f"{float(get_cpu_temperature()):.1f}",
+				"attributes": {},
 			}
 			# m/s -> knots
 			if GPSd_raw_data.get("speed") is not None:
@@ -107,6 +108,9 @@ def traccar_report():
 			
 			if GPSd_raw_data.get("Sat_Qty") is not None:
 				payload["sat"] = GPSd_raw_data.get("Sat_Qty")
+
+			if IMU_Metrics_data.get("bump_index") is not None and IMU_ENABLE:
+				payload["attributes"]["bump_index"] = IMU_Metrics_data.get("bump_index")
 
 			save_log(f"Payload Producer:{payload}")
 			SEND_QUEUE.append({
