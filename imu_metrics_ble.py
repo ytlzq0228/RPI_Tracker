@@ -194,11 +194,11 @@ class MetricsAggregator:
 		v = sample.get(field)
 	
 		# fallback：a* 没有/接近 0 时，用 A*（含重力）替代
-		if v is None or abs(v) < 1e-6:
-			fallback = field.upper()  # aX -> AX
-			v2 = sample.get(fallback)
-			if v2 is not None:
-				return float(v2)
+		#if v is None or abs(v) < 1e-6:
+		#	fallback = field.upper()  # aX -> AX
+		#	v2 = sample.get(fallback)
+		#	if v2 is not None:
+		#		return float(v2)
 	
 		return float(v or 0.0)
 
@@ -557,42 +557,16 @@ class AnyDevice(gatt.Device):
 			# 注意：TCP 是流，建议加长度前缀；这里保持与你原代码一致
 			self.sock_pc.sendall(value)
 
-#def main_start():
-#	arg_parser = ArgumentParser(description="BLE IMU Metrics Processor")
-#	arg_parser.add_argument("mac_address", help="MAC address of IMU")
-#	arg_parser.add_argument("host_ip", nargs="?", default=None, help="Optional TCP host to forward raw frames to (port 6666)")
-#	args = arg_parser.parse_args()
-#
-#	sock = None
-#	if args.host_ip:
-#		try:
-#			sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#			sock.connect((args.host_ip, 6666))
-#		except Exception as e:
-#			print("Could not connect to server:", e)
-#			sys.exit(1)
-#
-#	print("Connecting bluetooth ...")
-#	manager = gatt.DeviceManager(adapter_name="hci0")
-#	device = AnyDevice(manager=manager, mac_address=BLE_MAC)
-#	device.sock_pc = sock
-#	device.connect()
-#	manager.run()
-
 class BleWorker:
 	def __init__(self, mac: str, adapter: str = "hci0"):
 		self.mac = mac
 		self.adapter = adapter
-
 		self.thread: Optional[threading.Thread] = None
 		self.stop_event = threading.Event()
-
 		self.metrics_q: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=3000)
 		self.events_q: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=500)
-
 		self._lock = threading.Lock()
 		self.latest_metrics: Optional[Dict[str, Any]] = None
-
 		self.manager: Optional[gatt.DeviceManager] = None
 		self.device: Optional[AnyDevice] = None
 
