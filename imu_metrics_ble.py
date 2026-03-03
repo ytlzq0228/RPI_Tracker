@@ -642,10 +642,10 @@ class BleWorker:
 			pass
 
 
-def get_ble(app: FastAPI) -> BleWorker | None:
-	if not IMU_ENABLE:
-		return None
-	return getattr(app.state, "ble", None)
+def get_ble(app: FastAPI) -> Optional[BleWorker]:
+    if not IMU_ENABLE:
+        return None
+    return getattr(app.state, "ble", None)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
