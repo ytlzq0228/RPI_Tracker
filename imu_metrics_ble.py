@@ -412,6 +412,7 @@ class MetricsAggregator:
 			"tsStart": ts_start,
 			"tsEnd": ts_end,
 			"n": len(samples),
+			"status": "success",
 
 			# 纵向/横向/垂向（1秒统计）
 			"aLong_mean": float(np.mean(long_vals)),

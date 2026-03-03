@@ -109,8 +109,8 @@ def traccar_report():
 			if GPSd_raw_data.get("Sat_Qty") is not None:
 				payload["sat"] = GPSd_raw_data.get("Sat_Qty")
 
-			if IMU_Metrics_data.get("bump_index") is not None and IMU_ENABLE:
-				payload["attributes"]["bump_index"] = IMU_Metrics_data.get("bump_index")
+			if IMU_Metrics_data.get("status")=="success" and IMU_ENABLE:
+				payload["attributes"].update({k: v for k, v in IMU_Metrics_data.items() if k != "status"})
 
 			save_log(f"Payload Producer:{payload}")
 			SEND_QUEUE.append({
