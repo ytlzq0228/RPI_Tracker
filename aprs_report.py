@@ -158,7 +158,7 @@ def update_GPSd_raw_data():
 					time.sleep(1)  # 等待1秒后重试
 			time.sleep(0.5)
 		except Exception as err:
-			save_log(f"main: {err}")
+			save_log(f"update_GPSd_raw_data: {err}")
 			#raise
 			#切记全部改完了之后这里把raise注释掉，仅调试期间使用
 

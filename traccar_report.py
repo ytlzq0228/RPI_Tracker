@@ -29,6 +29,7 @@ Test_Flag=config.getboolean('Test_Flag', 'enable')
 VIN=config['Traccar_Config']['VIN']
 GPS_Device=config['GPS_Config']['GPS_Device']
 TRACCAR_ENABLE=config.getboolean('Traccar_Config', 'enable')
+IMU_ENABLE = config.getboolean('IMU_Config', 'enable')
 DB_ENABLE=config.getboolean('Traccar_Config', 'DB_enable')
 TRACCAR_URL=config['Traccar_Config']['TRACCAR_URL']
 TRACCAR_REPORT_INTERVAL=int(config['Traccar_Config']['TRACCAR_REPORT_INTERVAL'])
@@ -40,11 +41,13 @@ save_log(f"Traccar Param Test_Flag:{Test_Flag}")
 save_log(f"Traccar Param VIN:{VIN}")
 save_log(f"Traccar Param GPS_Device:{GPS_Device}")
 save_log(f"Traccar Param TRACCAR_ENABLE:{TRACCAR_ENABLE}")
+save_log(f"Traccar Param IMU_ENABLE:{IMU_ENABLE}")
 save_log(f"Traccar Param TRACCAR_URL:{TRACCAR_URL}")
 save_log(f"Traccar Param TRACCAR_REPORT_INTERVAL:{TRACCAR_REPORT_INTERVAL}")
 save_log(f"Traccar Param STILL_REPORT_INTERVAL:{STILL_REPORT_INTERVAL}")
 save_log(f"Traccar Param STILL_SPEED_THRESHOLD:{STILL_SPEED_THRESHOLD}")
 GPSd_raw_data={}
+IMU_Metrics_data={}
 report_traccar_timestamp=0
 still_report_traccar_timestamp=0
 RETRYABLE_HTTP = {408, 429, 500, 502, 503, 504}
@@ -104,7 +107,8 @@ def traccar_report():
 				payload["accuracy"] = f"{min(eph_val, 100):.1f}"
 			
 			if GPSd_raw_data.get("Sat_Qty") is not None:
-				payload["sat"] = GPSd_raw_data.get("Sat_Qty")	
+				payload["sat"] = GPSd_raw_data.get("Sat_Qty")
+
 			save_log(f"Payload Producer:{payload}")
 			SEND_QUEUE.append({
 				"payload": payload,
@@ -175,19 +179,47 @@ def update_GPSd_raw_data():
 					time.sleep(1)  # 等待1秒后重试
 			time.sleep(0.5)
 		except Exception as err:
-			save_log(f"main: {err}")
+			save_log(f"update_GPSd_raw_data: {err}")
 			#raise
 			#切记全部改完了之后这里把raise注释掉，仅调试期间使用
 
+def update_IMU_Metrics_data():
+	global IMU_Metrics_data
+	while True:
+		try:
+			while True:
+				try:
+					url = "http://127.0.0.1:5053/imu/latest"
+					resp = requests.get(url, timeout=1)
+					if resp.status_code==200:
+						IMU_Metrics_data = resp.json()
+						print(IMU_Metrics_data)
+						break  # 成功获取数据时退出循环
+					time.sleep(1)
+				except Exception as err:
+					save_log(f"Retrying IMU_Metrics_data with {err}")
+					time.sleep(1)  # 等待1秒后重试
+			time.sleep(0.5)
+		except Exception as err:
+			save_log(f"update_IMU_Metrics_data: {err}")
+			#raise
+			#切记全部改完了之后这里把raise注释掉，仅调试期间使用
 
 app = FastAPI()
 @app.on_event("startup")
 def startup_event():
 	GPS_thread = threading.Thread(target=update_GPSd_raw_data, daemon=True, name="update_GPSd_raw_data")
 	GPS_thread.start()
+
+	if IMU_ENABLE:
+		IMU_thread = threading.Thread(target=update_IMU_Metrics_data, daemon=True, name="update_IMU_Metrics_data")
+		IMU_thread.start()
+
 	if TRACCAR_ENABLE:
 		threading.Thread(target=traccar_report,daemon=True,name="traccar_producer").start()
 		threading.Thread(target=traccar_consumer,daemon=True,name="traccar_consumer").start()
+	
+
 
 @app.get("/traccar_status")
 async def traccar_status():
