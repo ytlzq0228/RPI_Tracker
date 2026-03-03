@@ -4,6 +4,9 @@ import json
 import math
 import socket
 import sys
+import threading
+import queue
+import gatt
 from collections import deque
 from argparse import ArgumentParser
 import configparser
@@ -11,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 
 import numpy as np
-import gatt
+from typing import Optional, Dict, Any
 
 # ---------------- 配置读取 ----------------
 CONFIG_FILE = '/etc/GPS_config.ini'
@@ -53,6 +56,10 @@ EVENT_PRE_SEC = 5
 EVENT_POST_SEC = 10
 
 
+BLE_MAC = "56:D8:18:8E:D2:FC"
+
+
+
 # ----------------------------
 # 解析器：把 BLE 帧解析成 dict
 # ----------------------------
@@ -80,8 +87,8 @@ class ImuParser:
 	def _i24_le(b0, b1, b2) -> int:
 		u = (b2 << 16) | (b1 << 8) | b0
 		if u & 0x800000:
-			u |= 0xFF000000
-		return int(u)					# now in [-8388608, 8388607]
+			u -= 0x1000000
+		return int(u)
 
 	def parse(self, buf: bytes):
 		# 返回 (ok, data_dict)
@@ -155,7 +162,7 @@ class ImuParser:
 # 指标聚合：1秒滑窗 + 事件检测 + 环形缓冲
 # ----------------------------
 class MetricsAggregator:
-	def __init__(self):
+	def __init__(self, on_metrics=None, on_event=None):
 		self.win = deque(maxlen=WINDOW_N)	 # 最近 1 秒样本（dict）
 		self.ring = deque(maxlen=RING_N)	  # 最近 RING_SEC 秒原始样本（dict）
 		self.last_emit_sec = None			 # 控制每秒输出一次
@@ -169,6 +176,8 @@ class MetricsAggregator:
 		}
 		self.pending_event = None
 		self.pending_event_deadline = 0.0
+		self.on_metrics = on_metrics
+		self.on_event = on_event
 
 	@staticmethod
 	def _rms(vals):
@@ -181,9 +190,17 @@ class MetricsAggregator:
 		return float(np.std(vals)) if len(vals) else 0.0
 
 	def _get_axis(self, sample: dict, key: str) -> float:
-		# key: "long"/"lat"/"vert"
 		field = AXIS_MAP[key]
-		return float(sample.get(field, 0.0))
+		v = sample.get(field)
+	
+		# fallback：a* 没有/接近 0 时，用 A*（含重力）替代
+		if v is None or abs(v) < 1e-6:
+			fallback = field.upper()  # aX -> AX
+			v2 = sample.get(fallback)
+			if v2 is not None:
+				return float(v2)
+	
+		return float(v or 0.0)
 
 	def _a_total(self, sample: dict) -> float:
 		# 优先用去重力 aX/aY/aZ，否则用 AX/AY/AZ
@@ -244,21 +261,45 @@ class MetricsAggregator:
 			elif sustained("turn"):
 				self._start_event("sharp_turn", sample)
 
-		# 如果已有 pending_event，到时间了就输出（含 pre/post 片段）
+
+		# 如果已有 pending_event，到时间了就 finalize 一次并回调
 		if self.pending_event is not None and now >= self.pending_event_deadline:
 			ev = self._finalize_event()
 			if ev is not None:
-				print(json.dumps({"type": "event", **ev}, ensure_ascii=False))
-
+				if self.on_event:
+					self.on_event({"type": "event", **ev})
+				else:
+					print(json.dumps({"type": "event", **ev}, ensure_ascii=False))
+		
 		# ---- 每秒输出一次指标 ----
 		if self.last_emit_sec is None:
 			self.last_emit_sec = sec
-
+		
 		if sec != self.last_emit_sec and len(self.win) >= max(10, WINDOW_N // 2):
 			metrics = self.compute_metrics()
-			print(json.dumps({"type": "metrics_1s", **metrics}, ensure_ascii=False))
-			print(metrics.get("bump_index"))
+			if metrics:
+				if self.on_metrics:
+					self.on_metrics({"type": "metrics_1s", **metrics})
+				else:
+					print(json.dumps({"type": "metrics_1s", **metrics}, ensure_ascii=False))
 			self.last_emit_sec = sec
+
+		## 如果已有 pending_event，到时间了就输出（含 pre/post 片段）
+		#if self.pending_event is not None and now >= self.pending_event_deadline:
+		#	ev = self._finalize_event()
+		#	if ev is not None:
+		#		print(json.dumps({"type": "event", **ev}, ensure_ascii=False))
+#
+		## ---- 每秒输出一次指标 ----
+		#if self.last_emit_sec is None:
+		#	self.last_emit_sec = sec
+#
+		#if sec != self.last_emit_sec and len(self.win) >= max(10, WINDOW_N // 2):
+		#	metrics = self.compute_metrics()
+		#	METRICS_CACHE = metrics
+		#	#print(json.dumps({"type": "metrics_1s", **metrics}, ensure_ascii=False))
+		#	#print(metrics.get("bump_index"))
+		#	self.last_emit_sec = sec
 
 	def _start_event(self, ev_type: str, sample: dict):
 		self.pending_event = {
@@ -516,188 +557,174 @@ class AnyDevice(gatt.Device):
 			# 注意：TCP 是流，建议加长度前缀；这里保持与你原代码一致
 			self.sock_pc.sendall(value)
 
+#def main_start():
+#	arg_parser = ArgumentParser(description="BLE IMU Metrics Processor")
+#	arg_parser.add_argument("mac_address", help="MAC address of IMU")
+#	arg_parser.add_argument("host_ip", nargs="?", default=None, help="Optional TCP host to forward raw frames to (port 6666)")
+#	args = arg_parser.parse_args()
+#
+#	sock = None
+#	if args.host_ip:
+#		try:
+#			sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#			sock.connect((args.host_ip, 6666))
+#		except Exception as e:
+#			print("Could not connect to server:", e)
+#			sys.exit(1)
+#
+#	print("Connecting bluetooth ...")
+#	manager = gatt.DeviceManager(adapter_name="hci0")
+#	device = AnyDevice(manager=manager, mac_address=BLE_MAC)
+#	device.sock_pc = sock
+#	device.connect()
+#	manager.run()
 
-
-def main_start():
-	arg_parser = ArgumentParser(description="BLE IMU Metrics Processor")
-	arg_parser.add_argument("mac_address", help="MAC address of IMU")
-	arg_parser.add_argument("host_ip", nargs="?", default=None, help="Optional TCP host to forward raw frames to (port 6666)")
-	args = arg_parser.parse_args()
-
-	sock = None
-	if args.host_ip:
-		try:
-			sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			sock.connect((args.host_ip, 6666))
-		except Exception as e:
-			print("Could not connect to server:", e)
-			sys.exit(1)
-
-	print("Connecting bluetooth ...")
-	manager = gatt.DeviceManager(adapter_name="hci0")
-	device = AnyDevice(manager=manager, mac_address=args.mac_address)
-	device.sock_pc = sock
-	device.connect()
-	manager.run()
-
-
-import threading
-import queue
-import time
-from typing import Optional, Dict, Any
-
-import gatt
-
-
-class BleImuWorker:
-	def __init__(self, mac: str, adapter: str = "hci0", host_ip: Optional[str] = None):
+class BleWorker:
+	def __init__(self, mac: str, adapter: str = "hci0"):
 		self.mac = mac
 		self.adapter = adapter
-		self.host_ip = host_ip
 
 		self.thread: Optional[threading.Thread] = None
 		self.stop_event = threading.Event()
 
 		self.metrics_q: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=3000)
-		self.event_q: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=1000)
+		self.events_q: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=500)
 
-		self.latest_metrics: Optional[Dict[str, Any]] = None
-		self.latest_event: Optional[Dict[str, Any]] = None
 		self._lock = threading.Lock()
+		self.latest_metrics: Optional[Dict[str, Any]] = None
 
 		self.manager: Optional[gatt.DeviceManager] = None
-		self.device = None  # AnyDevice
+		self.device: Optional[AnyDevice] = None
 
 	def start(self):
 		if self.thread and self.thread.is_alive():
 			return
 		self.stop_event.clear()
-		self.thread = threading.Thread(target=self._run, name="ble-imu-worker", daemon=True)
+		self.thread = threading.Thread(target=self._run, name="ble-imu", daemon=True)
 		self.thread.start()
 
 	def stop(self, timeout: float = 5.0):
 		self.stop_event.set()
-
-		# 关键：让 gatt 的 GLib loop 退出
+	
+		# 先断开设备
 		try:
-			if self.manager is not None:
-				# gatt_linux.DeviceManager 通常有 stop()，没有也没关系，except 掉
-				self.manager.stop()
+			if self.device is not None:
+				self.device.disconnect()
 		except Exception:
 			pass
-
+	
+		# 再停 manager（不同版本名字不同）
+		try:
+			if self.manager is not None:
+				if hasattr(self.manager, "stop"):
+					self.manager.stop()
+				elif hasattr(self.manager, "_main_loop") and self.manager._main_loop is not None:
+					self.manager._main_loop.quit()
+		except Exception:
+			pass
+	
 		if self.thread:
 			self.thread.join(timeout=timeout)
 
-	def _run(self):
-		# 这里延迟一点，避免 FastAPI 启动阶段资源竞争
-		time.sleep(0.2)
+	def _put_drop_old(self, q: queue.Queue, item: Dict[str, Any]):
+		try:
+			q.put_nowait(item)
+		except queue.Full:
+			try:
+				_ = q.get_nowait()
+			except queue.Empty:
+				pass
+			try:
+				q.put_nowait(item)
+			except queue.Full:
+				pass
 
-		# 1) 构造 processor，回调里回传给主程序
+	def _run(self):
 		def on_metrics(m: Dict[str, Any]):
 			with self._lock:
 				self.latest_metrics = m
-			# 队列满了就丢最老的，保证线程不阻塞
-			try:
-				self.metrics_q.put_nowait(m)
-			except queue.Full:
-				try:
-					_ = self.metrics_q.get_nowait()
-				except queue.Empty:
-					pass
-				try:
-					self.metrics_q.put_nowait(m)
-				except queue.Full:
-					pass
+			self._put_drop_old(self.metrics_q, m)
 
 		def on_event(e: Dict[str, Any]):
-			with self._lock:
-				self.latest_event = e
-			try:
-				self.event_q.put_nowait(e)
-			except queue.Full:
-				try:
-					_ = self.event_q.get_nowait()
-				except queue.Empty:
-					pass
-				try:
-					self.event_q.put_nowait(e)
-				except queue.Full:
-					pass
+			self._put_drop_old(self.events_q, e)
 
-		processor = MetricsProcessor(
-			sample_rate_hz=50.0,
-			window_sec=1.0,
-			raw_buffer_sec=60.0,
-			event_pre_sec=5.0,
-			event_post_sec=10.0,
-			on_metrics=on_metrics,
-			on_event=on_event,
-		)
-
-		# 2) 启动 gatt 主循环（阻塞）
+		# 注意：AnyDevice 里现在是 self.agg = MetricsAggregator()
+		# 这里我们把回调传进去，需要你按上面的 B) 修改 MetricsAggregator 支持 on_metrics/on_event
 		self.manager = gatt.DeviceManager(adapter_name=self.adapter)
 
-		# 你的 AnyDevice 需要接收 processor 的话，用 kwargs 传进去
-		# 如果你当前 AnyDevice 构造不需要 processor，就把 processor 注入到 device 上也行
-		self.device = AnyDevice(manager=self.manager, mac_address=self.mac, processor=processor)
+		self.device = AnyDevice(manager=self.manager, mac_address=self.mac)
+
+		# 把回调注入 aggregator（最小侵入做法：直接替换 agg）
+		self.device.agg = MetricsAggregator(on_metrics=on_metrics, on_event=on_event)
 
 		self.device.connect()
 
-		# 3) 关键点：退出条件
-		# gatt 的 run() 会阻塞；stop() 会让 loop 退出
-		# 所以这里简单 run()，由 stop() 来终止
 		try:
 			self.manager.run()
-		except Exception as e:
-			# 你可以在这里记录日志
-			# print("BLE worker crashed:", e)
+		except Exception as err:
+			print(err)
+			# 这里建议你接入 logging
 			pass
 
-BLE_MAC = "56:D8:18:8E:D2:FC"
-
-worker: BleImuWorker | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-	global worker
-
-	# 避免 uvicorn --reload 双进程重复启动：只在主进程启动
-	# uvicorn 会设置 RUN_MAIN 或者你也可以用更严格的方式识别
-	# 如果你不用 reload，这段可以不要
-	import os
-	if os.environ.get("RUN_MAIN") == "true" or os.environ.get("RUN_MAIN") is None:
-		worker = BleImuWorker(mac=BLE_MAC, adapter="hci0")
-		worker.start()
+	# 启动 BLE worker
+	app.state.ble = BleWorker(mac=BLE_MAC, adapter="hci0")
+	app.state.ble.start()
 
 	yield
 
-	if worker:
-		worker.stop(timeout=5.0)
+	# 停止 BLE worker
+	try:
+		app.state.ble.stop(timeout=5.0)
+	except Exception:
+		pass
+
 
 app = FastAPI(lifespan=lifespan)
 
+
 @app.get("/imu/latest")
 def imu_latest():
-	if not worker:
-		raise HTTPException(503, "worker not started")
-	with worker._lock:
-		return worker.latest_metrics or {"type": "metrics_1s", "status": "no_data"}
+	ble: BleWorker = getattr(app.state, "ble", None)
+	if not ble:
+		raise HTTPException(503, "BLE worker not started")
+
+	with ble._lock:
+		return ble.latest_metrics or {"type": "metrics_1s", "status": "no_data"}
+
 
 @app.get("/imu/poll")
 def imu_poll(n: int = 10):
-	if not worker:
-		raise HTTPException(503, "worker not started")
+	ble: BleWorker = getattr(app.state, "ble", None)
+	if not ble:
+		raise HTTPException(503, "BLE worker not started")
+
+	n = max(0, min(n, 200))
 	out = []
-	for _ in range(max(0, min(n, 200))):
+	for _ in range(n):
 		try:
-			out.append(worker.metrics_q.get_nowait())
-		except Exception:
+			out.append(ble.metrics_q.get_nowait())
+		except queue.Empty:
 			break
 	return {"n": len(out), "items": out}
 
 
+@app.get("/imu/events")
+def imu_events(n: int = 10):
+	ble: BleWorker = getattr(app.state, "ble", None)
+	if not ble:
+		raise HTTPException(503, "BLE worker not started")
 
+	n = max(0, min(n, 200))
+	out = []
+	for _ in range(n):
+		try:
+			out.append(ble.events_q.get_nowait())
+		except queue.Empty:
+			break
+	return {"n": len(out), "items": out}
 
 if __name__ == "__main__":
 	import logging
