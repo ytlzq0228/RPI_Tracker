@@ -28,7 +28,6 @@ GPSd_host = config['GPS_Config']['GPSd_host']
 GPSd_port = config['GPS_Config']['GPSd_port']
 SERVICE_NAME = "RPI_Tracker.service"
 
-
 save_log(f"RPI Tracker {VERSION} Starting...")
 save_log("RPI Tracker Get Config Params:")
 save_log(f"RPI Tracker Param GPSd_host:{GPSd_host}")
@@ -72,14 +71,12 @@ except (ImportError, ModuleNotFoundError) as e:
 	print(f"[GPIO] RPi.GPIO not available, fallback to MockGPIO: {e}")
 	GPIO = MockGPIO()
 
-
 # ---------------- FastAPI & 模板 ----------------
 app = FastAPI()
 templates = Jinja2Templates(directory="web_templates")
 
 # 如果有静态资源，可以这样挂载（按需）
 app.mount("/static", StaticFiles(directory="web_templates"), name="static")
-
 
 # ---------------- 数据结构与工具函数 ----------------
 def get_constellation(prn):
@@ -300,7 +297,6 @@ def update_report_status():
 			gps_data_cache['status_data']['APRSReport'] = f"Error fetching traccar_status: {e}"
 		time.sleep(0.5)
 
-
 # ---------------- FastAPI 生命周期：启动线程 ----------------
 def traccar_report_app():
 	uvicorn.run("traccar_report:app", host="0.0.0.0", port=5051, reload=False, access_log=False)
@@ -320,28 +316,22 @@ def startup_event():
 	threading.Thread(target=imu_metrics_ble_app, daemon=True).start()
 	threading.Thread(target=dsm_upload_files, daemon=True).start()
 
-
-
 # ---------------- 路由 ----------------
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
 	return templates.TemplateResponse("index.html", {"request": request})
 
-
 @app.get("/snr-data")
 async def snr_data():
 	return gps_data_cache['SNR']
-
 
 @app.get("/tpv-data")
 async def tpv_data():
 	return gps_data_cache['TPV']
 
-
 @app.get("/path-data")
 async def path_data():
 	return gps_data_cache['Path']
-
 
 @app.get("/status-data")
 async def status_data():

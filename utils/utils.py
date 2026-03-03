@@ -12,8 +12,6 @@ config.read(CONFIG_FILE)
 LOG_FILE_PATH=config['SYNO_Config']['LOCAL_LOG_FILE_PATH']
 SSID=config['APRS_Config']['SSID']
 
-
-
 def save_log(result):
 	try:
 		#print(result)
@@ -33,7 +31,6 @@ def get_cpu_temperature():
 		return f"{temp:.2f}"
 	except Exception as e:
 		return 0
-
 
 def get_uptime():
 	try:

@@ -24,7 +24,6 @@ VERSION='traccar_260303.01'
 config = configparser.ConfigParser()
 config.read(CONFIG_FILE)
 
-
 Test_Flag=config.getboolean('Test_Flag', 'enable')
 VIN=config['Traccar_Config']['VIN']
 GPS_Device=config['GPS_Config']['GPS_Device']
@@ -217,8 +216,6 @@ def startup_event():
 	if TRACCAR_ENABLE:
 		threading.Thread(target=traccar_report,daemon=True,name="traccar_producer").start()
 		threading.Thread(target=traccar_consumer,daemon=True,name="traccar_consumer").start()
-	
-
 
 @app.get("/traccar_status")
 async def traccar_status():

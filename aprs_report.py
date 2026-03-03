@@ -171,7 +171,6 @@ def startup_event():
 		traccar_thread = threading.Thread(target=aprs_report, daemon=True, name="aprs_report")
 		traccar_thread.start()
 
-
 @app.get("/aprs_status")
 async def aprs_status():
 	if APRS_ENABLE:
@@ -191,6 +190,4 @@ if __name__ == '__main__':
 	import uvicorn
 	logging.getLogger("uvicorn.access").setLevel(logging.ERROR)
 	uvicorn.run(app, host="0.0.0.0", port=5052)
-
-
 
