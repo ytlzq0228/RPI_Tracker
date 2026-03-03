@@ -409,8 +409,8 @@ class MetricsAggregator:
 		score = float(max(0.0, min(100.0, score)))
 
 		return {
-			"tsStart": ts_start,
-			"tsEnd": ts_end,
+			"IMU_tsStart": ts_start,
+			"IMU_tsEnd": ts_end,
 			"n": len(samples),
 			"status": "success",
 

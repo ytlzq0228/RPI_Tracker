@@ -110,7 +110,8 @@ def traccar_report():
 				payload["sat"] = GPSd_raw_data.get("Sat_Qty")
 
 			if IMU_Metrics_data.get("status")=="success" and IMU_ENABLE:
-				payload["attributes"].update({k: v for k, v in IMU_Metrics_data.items() if k != "status"})
+				ignore_k_list=["status","type","n"]
+				payload.update({k: v for k, v in IMU_Metrics_data.items() if k not in ignore_k_list})
 
 			save_log(f"Payload Producer:{payload}")
 			SEND_QUEUE.append({
@@ -141,6 +142,7 @@ def traccar_consumer():
 
 			try:
 				resp = requests.post(TRACCAR_URL, data=payload, timeout=3)
+				#resp = requests.post(f"{TRACCAR_URL}/api/positions", data=payload, timeout=3)
 				if 200 <= resp.status_code < 300:
 					save_log(f"Traccar Sent OK payload={payload} queue={len(SEND_QUEUE)}")
 				elif resp.status_code in RETRYABLE_HTTP:
