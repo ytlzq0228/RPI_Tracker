@@ -179,90 +179,100 @@ def upload_with_retry(session, sid, local_file, remote_dir):
 
 # ---------------- 主流程 ----------------
 def dsm_upload_files():
-	local_log_base_dir = Path(LOG_FILE_PATH)
-	if not local_log_base_dir.exists() or not local_log_base_dir.is_dir():
-		raise RuntimeError(f"LOG_FILE_PATH not a directory: {local_log_base_dir}")
-
-	s = requests.Session()
-	sid = login(s)
-	save_log(f"[FILE COPY]{NAS} login success, sid:{sid[:4]}*****{sid[-4:]}")
-
-	# 远端索引缓存：remote_dir -> (ts, idx)
-	remote_dir_cache: Dict[str, Tuple[float, Dict[str, Tuple[int, int]]]] = {}
-
 	while True:
 		try:
-			local_files_list = iter_local_files(local_log_base_dir, recursive=RECURSIVE)
-			if not local_files_list:
-				time.sleep(WAIT_CYCLE)
-				continue
-
-			uploaded = skipped = failed = 0
-
-			for local_file in sorted(local_files_list):
-				# 过滤无用文件
-				if local_file.name == ".DS_Store":
-					continue
-
-				# Pi 环境：Path 原生相对路径 + posix
-				rel = local_file.relative_to(local_log_base_dir)   # Path
-				remote_dir = (Path(REMOTE_FILE_PATH) / rel.parent).as_posix()
-				local_file_name = local_file.name
-
-				# 增量：按 remote_dir 获取缓存（带 TTL）
-				if INCREMENTAL_UPDATE:
-					ts_idx = remote_dir_cache.get(remote_dir)
-					if (ts_idx is None) or (time.time() - ts_idx[0] > REMOTE_INDEX_TTL):
-						idx = build_remote_index(s, sid, remote_dir)
-						remote_dir_cache[remote_dir] = (time.time(), idx)
-					remote_idx = remote_dir_cache[remote_dir][1]
-
-					if not should_upload(local_file, remote_idx, local_file_name):
-						skipped += 1
-						continue
-
-				save_log(f"[FILE COPY]UPLOAD {rel.as_posix()} -> {remote_dir}/")
-
-				# 先尝试上传（带异常重试）
+			local_log_base_dir = Path(LOG_FILE_PATH)
+			if not local_log_base_dir.exists() or not local_log_base_dir.is_dir():
+				raise RuntimeError(f"LOG_FILE_PATH not a directory: {local_log_base_dir}")
+		
+			s = requests.Session()
+		
+			try:
+				sid = login(s)
+			except Exception as err:
+				raise RuntimeError(f"[FILE COPY]{NAS} login failed {err}")
+		
+			save_log(f"[FILE COPY]{NAS} login success, sid:{sid[:4]}*****{sid[-4:]}")
+		
+			# 远端索引缓存：remote_dir -> (ts, idx)
+			remote_dir_cache: Dict[str, Tuple[float, Dict[str, Tuple[int, int]]]] = {}
+		
+			while True:
 				try:
-					resp = upload_with_retry(s, sid, local_file, remote_dir)
-				except Exception as e:
-					failed += 1
-					save_log(f"[FILE COPY]upload {rel.as_posix()} exception: {e}")
-					continue
-
-				# 如果返回 119：重登 + 立即重试一次
-				if (not resp.get("success")) and resp.get("error", {}).get("code") == 119:
-					save_log(f"[FILE COPY]SID invalid(119), relogin and retry once. old sid:{sid[:4]}*****{sid[-4:]}")
-					sid = login(s)
-					save_log(f"[FILE COPY]{NAS} relogin success, sid:{sid[:4]}*****{sid[-4:]}")
-
-					try:
-						resp = upload_with_retry(s, sid, local_file, remote_dir)
-					except Exception as e:
-						failed += 1
-						save_log(f"[FILE COPY]upload after relogin failed {rel.as_posix()} exception: {e}")
+					local_files_list = iter_local_files(local_log_base_dir, recursive=RECURSIVE)
+					if not local_files_list:
+						time.sleep(WAIT_CYCLE)
 						continue
-
-				if resp.get("success"):
-					uploaded += 1
-					# 更新本目录缓存，避免下一次又传
-					if INCREMENTAL_UPDATE:
-						st = local_file.stat()
-						ts, idx = remote_dir_cache.get(remote_dir, (time.time(), {}))
-						idx[local_file_name] = (int(st.st_size), int(time.time()))
-						remote_dir_cache[remote_dir] = (ts, idx)
-				else:
-					failed += 1
-					save_log(f"[FILE COPY]upload {rel.as_posix()} failed resp:{resp}")
-
-			save_log(f"[FILE COPY]Done. uploaded={uploaded}, skipped={skipped}, failed={failed}")
-
+		
+					uploaded = skipped = failed = 0
+		
+					for local_file in sorted(local_files_list):
+						# 过滤无用文件
+						if local_file.name == ".DS_Store":
+							continue
+		
+						# Pi 环境：Path 原生相对路径 + posix
+						rel = local_file.relative_to(local_log_base_dir)   # Path
+						remote_dir = (Path(REMOTE_FILE_PATH) / rel.parent).as_posix()
+						local_file_name = local_file.name
+		
+						# 增量：按 remote_dir 获取缓存（带 TTL）
+						if INCREMENTAL_UPDATE:
+							ts_idx = remote_dir_cache.get(remote_dir)
+							if (ts_idx is None) or (time.time() - ts_idx[0] > REMOTE_INDEX_TTL):
+								idx = build_remote_index(s, sid, remote_dir)
+								remote_dir_cache[remote_dir] = (time.time(), idx)
+							remote_idx = remote_dir_cache[remote_dir][1]
+		
+							if not should_upload(local_file, remote_idx, local_file_name):
+								skipped += 1
+								continue
+		
+						save_log(f"[FILE COPY]UPLOAD {rel.as_posix()} -> {remote_dir}/")
+		
+						# 先尝试上传（带异常重试）
+						try:
+							resp = upload_with_retry(s, sid, local_file, remote_dir)
+						except Exception as e:
+							failed += 1
+							save_log(f"[FILE COPY]upload {rel.as_posix()} exception: {e}")
+							continue
+		
+						# 如果返回 119：重登 + 立即重试一次
+						if (not resp.get("success")) and resp.get("error", {}).get("code") == 119:
+							save_log(f"[FILE COPY]SID invalid(119), relogin and retry once. old sid:{sid[:4]}*****{sid[-4:]}")
+							sid = login(s)
+							save_log(f"[FILE COPY]{NAS} relogin success, sid:{sid[:4]}*****{sid[-4:]}")
+		
+							try:
+								resp = upload_with_retry(s, sid, local_file, remote_dir)
+							except Exception as e:
+								failed += 1
+								save_log(f"[FILE COPY]upload after relogin failed {rel.as_posix()} exception: {e}")
+								continue
+		
+						if resp.get("success"):
+							uploaded += 1
+							# 更新本目录缓存，避免下一次又传
+							if INCREMENTAL_UPDATE:
+								st = local_file.stat()
+								ts, idx = remote_dir_cache.get(remote_dir, (time.time(), {}))
+								idx[local_file_name] = (int(st.st_size), int(time.time()))
+								remote_dir_cache[remote_dir] = (ts, idx)
+						else:
+							failed += 1
+							save_log(f"[FILE COPY]upload {rel.as_posix()} failed resp:{resp}")
+		
+					save_log(f"[FILE COPY]Done. uploaded={uploaded}, skipped={skipped}, failed={failed}")
+		
+				except Exception as e:
+					save_log(f"[FILE COPY]loop error {e}")
+		
+				finally:
+					time.sleep(WAIT_CYCLE)
 		except Exception as e:
-			save_log(f"[FILE COPY]loop error {e}")
+			save_log(f"[FILE COPY]error {e}")
 
-		finally:
-			time.sleep(WAIT_CYCLE)
 
 if __name__ == "__main__":
 	dsm_upload_files()
