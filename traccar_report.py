@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 CONFIG_FILE='/etc/GPS_config.ini'
-VERSION='traccar_1115.01'
+VERSION='traccar_260303.01'
 
 # 读取配置文件
 config = configparser.ConfigParser()

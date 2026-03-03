@@ -18,8 +18,21 @@ from SYNOFileStationUpload import dsm_upload_files
 
 # ---------------- 配置读取 ----------------
 CONFIG_FILE = '/etc/GPS_config.ini'
+VERSION='main_260303.01'
 config = configparser.ConfigParser()
 config.read(CONFIG_FILE)
+
+# ---------------- GPSD 连接和全局配置 ----------------
+
+GPSd_host = config['GPS_Config']['GPSd_host']
+GPSd_port = config['GPS_Config']['GPSd_port']
+SERVICE_NAME = "RPI_Tracker.service"
+
+
+save_log(f"RPI Tracker {VERSION} Starting...")
+save_log("RPI Tracker Get Config Params:")
+save_log(f"RPI Tracker Param GPSd_host:{GPSd_host}")
+save_log(f"RPI Tracker Param GPSd_port:{GPSd_port}")
 
 # ---------------- GPIO / MockGPIO ----------------
 # ---------------- GPIO / MockGPIO ----------------
@@ -67,11 +80,6 @@ templates = Jinja2Templates(directory="web_templates")
 # 如果有静态资源，可以这样挂载（按需）
 app.mount("/static", StaticFiles(directory="web_templates"), name="static")
 
-# ---------------- GPSD 连接和全局配置 ----------------
-
-GPSd_host = config['GPS_Config']['GPSd_host']
-GPSd_port = config['GPS_Config']['GPSd_port']
-SERVICE_NAME = "RPI_Tracker.service"
 
 # ---------------- 数据结构与工具函数 ----------------
 def get_constellation(prn):
