@@ -516,7 +516,9 @@ class AnyDevice(gatt.Device):
 			# 注意：TCP 是流，建议加长度前缀；这里保持与你原代码一致
 			self.sock_pc.sendall(value)
 
-def main_local():
+
+
+def main_start():
 	arg_parser = ArgumentParser(description="BLE IMU Metrics Processor")
 	arg_parser.add_argument("mac_address", help="MAC address of IMU")
 	arg_parser.add_argument("host_ip", nargs="?", default=None, help="Optional TCP host to forward raw frames to (port 6666)")
@@ -537,6 +539,120 @@ def main_local():
 	device.sock_pc = sock
 	device.connect()
 	manager.run()
+
+
+import threading
+import queue
+import time
+from typing import Optional, Dict, Any
+
+import gatt
+
+
+class BleImuWorker:
+	def __init__(self, mac: str, adapter: str = "hci0", host_ip: Optional[str] = None):
+		self.mac = mac
+		self.adapter = adapter
+		self.host_ip = host_ip
+
+		self.thread: Optional[threading.Thread] = None
+		self.stop_event = threading.Event()
+
+		self.metrics_q: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=3000)
+		self.event_q: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=1000)
+
+		self.latest_metrics: Optional[Dict[str, Any]] = None
+		self.latest_event: Optional[Dict[str, Any]] = None
+		self._lock = threading.Lock()
+
+		self.manager: Optional[gatt.DeviceManager] = None
+		self.device = None  # AnyDevice
+
+	def start(self):
+		if self.thread and self.thread.is_alive():
+			return
+		self.stop_event.clear()
+		self.thread = threading.Thread(target=self._run, name="ble-imu-worker", daemon=True)
+		self.thread.start()
+
+	def stop(self, timeout: float = 5.0):
+		self.stop_event.set()
+
+		# 关键：让 gatt 的 GLib loop 退出
+		try:
+			if self.manager is not None:
+				# gatt_linux.DeviceManager 通常有 stop()，没有也没关系，except 掉
+				self.manager.stop()
+		except Exception:
+			pass
+
+		if self.thread:
+			self.thread.join(timeout=timeout)
+
+	def _run(self):
+		# 这里延迟一点，避免 FastAPI 启动阶段资源竞争
+		time.sleep(0.2)
+
+		# 1) 构造 processor，回调里回传给主程序
+		def on_metrics(m: Dict[str, Any]):
+			with self._lock:
+				self.latest_metrics = m
+			# 队列满了就丢最老的，保证线程不阻塞
+			try:
+				self.metrics_q.put_nowait(m)
+			except queue.Full:
+				try:
+					_ = self.metrics_q.get_nowait()
+				except queue.Empty:
+					pass
+				try:
+					self.metrics_q.put_nowait(m)
+				except queue.Full:
+					pass
+
+		def on_event(e: Dict[str, Any]):
+			with self._lock:
+				self.latest_event = e
+			try:
+				self.event_q.put_nowait(e)
+			except queue.Full:
+				try:
+					_ = self.event_q.get_nowait()
+				except queue.Empty:
+					pass
+				try:
+					self.event_q.put_nowait(e)
+				except queue.Full:
+					pass
+
+		processor = MetricsProcessor(
+			sample_rate_hz=50.0,
+			window_sec=1.0,
+			raw_buffer_sec=60.0,
+			event_pre_sec=5.0,
+			event_post_sec=10.0,
+			on_metrics=on_metrics,
+			on_event=on_event,
+		)
+
+		# 2) 启动 gatt 主循环（阻塞）
+		self.manager = gatt.DeviceManager(adapter_name=self.adapter)
+
+		# 你的 AnyDevice 需要接收 processor 的话，用 kwargs 传进去
+		# 如果你当前 AnyDevice 构造不需要 processor，就把 processor 注入到 device 上也行
+		self.device = AnyDevice(manager=self.manager, mac_address=self.mac, processor=processor)
+
+		self.device.connect()
+
+		# 3) 关键点：退出条件
+		# gatt 的 run() 会阻塞；stop() 会让 loop 退出
+		# 所以这里简单 run()，由 stop() 来终止
+		try:
+			self.manager.run()
+		except Exception as e:
+			# 你可以在这里记录日志
+			# print("BLE worker crashed:", e)
+			pass
 
 BLE_MAC = "56:D8:18:8E:D2:FC"
 
