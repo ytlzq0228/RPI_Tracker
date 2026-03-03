@@ -193,7 +193,6 @@ def update_IMU_Metrics_data():
 					resp = requests.get(url, timeout=1)
 					if resp.status_code==200:
 						IMU_Metrics_data = resp.json()
-						save_log(IMU_Metrics_data)
 						break  # 成功获取数据时退出循环
 					time.sleep(1)
 				except Exception as err:
