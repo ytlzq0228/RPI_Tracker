@@ -12,7 +12,7 @@ from argparse import ArgumentParser
 import configparser
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
-
+from utils.utils import save_log
 import numpy as np
 from typing import Optional, Dict, Any
 
@@ -468,19 +468,19 @@ class AnyDevice(gatt.Device):
 
 	def connect_succeeded(self):
 		super().connect_succeeded()
-		print(f"[{self.mac_address}] Connected")
+		save_log(f"[{self.mac_address}] Connected")
 
 	def connect_failed(self, error):
 		super().connect_failed(error)
-		print(f"[{self.mac_address}] Connection failed: {error}")
+		save_log(f"[{self.mac_address}] Connection failed: {error}")
 
 	def disconnect_succeeded(self):
 		super().disconnect_succeeded()
-		print(f"[{self.mac_address}] Disconnected")
+		save_log(f"[{self.mac_address}] Disconnected")
 
 	def services_resolved(self):
 		super().services_resolved()
-		print(f"[{self.mac_address}] Resolved services")
+		save_log(f"[{self.mac_address}] Resolved services")
 
 		# 建立 uuid->characteristic 映射（修复你原来的 service 取最后一个的问题）
 		ch_map = {}
@@ -489,15 +489,15 @@ class AnyDevice(gatt.Device):
 				ch_map[c.uuid.lower()] = c
 
 		for s in self.services:
-			print(f"[{self.mac_address}]\tService [{s.uuid}]")
+			save_log(f"[{self.mac_address}]\tService [{s.uuid}]")
 			for c in s.characteristics:
-				print(f"[{self.mac_address}]\t\tCharacteristic [{c.uuid}]")
+				save_log(f"[{self.mac_address}]\t\tCharacteristic [{c.uuid}]")
 
 		uuid_ae01 = "0000ae01-0000-1000-8000-00805f9b34fb"
 		uuid_ae02 = "0000ae02-0000-1000-8000-00805f9b34fb"
 
 		if uuid_ae01 not in ch_map or uuid_ae02 not in ch_map:
-			print(f"[{self.mac_address}] ERROR: AE01/AE02 characteristic not found")
+			save_log(f"[{self.mac_address}] ERROR: AE01/AE02 characteristic not found")
 			return
 
 		ctrl = ch_map[uuid_ae01]
@@ -631,7 +631,7 @@ class BleWorker:
 		try:
 			self.manager.run()
 		except Exception as err:
-			print(err)
+			save_log(err)
 			# 这里建议你接入 logging
 			pass
 
@@ -646,7 +646,7 @@ async def lifespan(app: FastAPI):
 	if IMU_ENABLE:
 		app.state.ble = BleWorker(mac=BLE_MAC, adapter="hci0")
 		app.state.ble.start()
-		print(f"{BLE_MAC} CONNECTED")
+		save_log(f"{BLE_MAC} CONNECTED")
 	else:
 		app.state.ble = None
 
