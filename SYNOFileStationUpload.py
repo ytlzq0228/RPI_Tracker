@@ -272,6 +272,7 @@ def dsm_upload_files():
 					time.sleep(WAIT_CYCLE)
 		except Exception as e:
 			save_log(f"[FILE COPY]error {e}")
+			time.sleep(60)
 
 
 if __name__ == "__main__":
