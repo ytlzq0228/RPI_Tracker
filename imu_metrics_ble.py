@@ -7,6 +7,8 @@ import sys
 from collections import deque
 from argparse import ArgumentParser
 import configparser
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException
 
 import numpy as np
 import gatt
@@ -514,8 +516,7 @@ class AnyDevice(gatt.Device):
 			# 注意：TCP 是流，建议加长度前缀；这里保持与你原代码一致
 			self.sock_pc.sendall(value)
 
-
-def main():
+def main_local():
 	arg_parser = ArgumentParser(description="BLE IMU Metrics Processor")
 	arg_parser.add_argument("mac_address", help="MAC address of IMU")
 	arg_parser.add_argument("host_ip", nargs="?", default=None, help="Optional TCP host to forward raw frames to (port 6666)")
@@ -537,6 +538,53 @@ def main():
 	device.connect()
 	manager.run()
 
+BLE_MAC = "56:D8:18:8E:D2:FC"
+
+worker: BleImuWorker | None = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+	global worker
+
+	# 避免 uvicorn --reload 双进程重复启动：只在主进程启动
+	# uvicorn 会设置 RUN_MAIN 或者你也可以用更严格的方式识别
+	# 如果你不用 reload，这段可以不要
+	import os
+	if os.environ.get("RUN_MAIN") == "true" or os.environ.get("RUN_MAIN") is None:
+		worker = BleImuWorker(mac=BLE_MAC, adapter="hci0")
+		worker.start()
+
+	yield
+
+	if worker:
+		worker.stop(timeout=5.0)
+
+app = FastAPI(lifespan=lifespan)
+
+@app.get("/imu/latest")
+def imu_latest():
+	if not worker:
+		raise HTTPException(503, "worker not started")
+	with worker._lock:
+		return worker.latest_metrics or {"type": "metrics_1s", "status": "no_data"}
+
+@app.get("/imu/poll")
+def imu_poll(n: int = 10):
+	if not worker:
+		raise HTTPException(503, "worker not started")
+	out = []
+	for _ in range(max(0, min(n, 200))):
+		try:
+			out.append(worker.metrics_q.get_nowait())
+		except Exception:
+			break
+	return {"n": len(out), "items": out}
+
+
+
 
 if __name__ == "__main__":
-	main()
+	import logging
+	import uvicorn
+	logging.getLogger("uvicorn.access").setLevel(logging.ERROR)
+	uvicorn.run(app, host="0.0.0.0", port=5053)
