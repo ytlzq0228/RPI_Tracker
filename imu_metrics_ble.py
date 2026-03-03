@@ -653,6 +653,7 @@ async def lifespan(app: FastAPI):
 	if IMU_ENABLE:
 		app.state.ble = BleWorker(mac=BLE_MAC, adapter="hci0")
 		app.state.ble.start()
+		print(f"{BLE_MAC} CONNECTED")
 	else:
 		app.state.ble = None
 
