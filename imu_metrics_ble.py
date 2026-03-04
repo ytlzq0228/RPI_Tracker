@@ -459,8 +459,9 @@ class MetricsAggregator:
 # BLE 设备：连接 + 订阅 + 接收
 # ----------------------------
 class AnyDevice(gatt.Device):
-	def __init__(self, *args, **kwargs):
+	def __init__(self, *args, worker=None, **kwargs):
 		super().__init__(*args, **kwargs)
+		self.worker = worker
 		self.sock_pc = None
 		self.parse_local = True
 
@@ -474,6 +475,8 @@ class AnyDevice(gatt.Device):
 	def connect_failed(self, error):
 		super().connect_failed(error)
 		save_log(f"[{self.mac_address}] Connection failed: {error}")
+		if self.worker:
+			self.worker.request_reconnect(f"connect_failed: {error}")
 
 	def disconnect_succeeded(self):
 		super().disconnect_succeeded()
@@ -482,60 +485,69 @@ class AnyDevice(gatt.Device):
 	def services_resolved(self):
 		super().services_resolved()
 		save_log(f"[{self.mac_address}] Resolved services")
-
-		# 建立 uuid->characteristic 映射（修复你原来的 service 取最后一个的问题）
-		ch_map = {}
-		for s in self.services:
-			for c in s.characteristics:
-				ch_map[c.uuid.lower()] = c
-
-		for s in self.services:
-			save_log(f"[{self.mac_address}]\tService [{s.uuid}]")
-			for c in s.characteristics:
-				save_log(f"[{self.mac_address}]\t\tCharacteristic [{c.uuid}]")
-
-		uuid_ae01 = "0000ae01-0000-1000-8000-00805f9b34fb"
-		uuid_ae02 = "0000ae02-0000-1000-8000-00805f9b34fb"
-
-		if uuid_ae01 not in ch_map or uuid_ae02 not in ch_map:
-			save_log(f"[{self.mac_address}] ERROR: AE01/AE02 characteristic not found")
-			return
-
-		ctrl = ch_map[uuid_ae01]
-		data = ch_map[uuid_ae02]
-
-		# 设备保持连接/高速
-		ctrl.write_value(bytes([0x29]))
-		time.sleep(0.05)
-		ctrl.write_value(bytes([0x46]))
-		time.sleep(0.05)
-
-		# 参数设置
-		isCompassOn = 0
-		barometerFilter = 2
-		Cmd_ReportTag = 0x7F
-
-		params = bytearray(11)
-		params[0] = 0x12
-		params[1] = 5
-		params[2] = 255
-		params[3] = 0
-		params[4] = ((barometerFilter & 3) << 1) | (isCompassOn & 1)
-		params[5] = 50  # 建议和实际 20ms一致：50Hz；你之前写 60Hz 也可以，但要确保设备真输出 60Hz
-		params[6] = 1
-		params[7] = 3
-		params[8] = 5
-		params[9] = Cmd_ReportTag & 0xFF
-		params[10] = (Cmd_ReportTag >> 8) & 0xFF
-		ctrl.write_value(params)
-		time.sleep(0.05)
-
-		# 开始主动上报
-		ctrl.write_value(bytes([0x19]))
-		time.sleep(0.05)
-
-		# 启用通知
-		data.enable_notifications()
+		try:
+			# 建立 uuid->characteristic 映射（修复你原来的 service 取最后一个的问题）
+			ch_map = {}
+			for s in self.services:
+				for c in s.characteristics:
+					ch_map[c.uuid.lower()] = c
+	
+			for s in self.services:
+				save_log(f"[{self.mac_address}]\tService [{s.uuid}]")
+				for c in s.characteristics:
+					save_log(f"[{self.mac_address}]\t\tCharacteristic [{c.uuid}]")
+	
+			uuid_ae01 = "0000ae01-0000-1000-8000-00805f9b34fb"
+			uuid_ae02 = "0000ae02-0000-1000-8000-00805f9b34fb"
+	
+			if uuid_ae01 not in ch_map or uuid_ae02 not in ch_map:
+				msg = "AE01/AE02 characteristic not found"
+				save_log(f"[{self.mac_address}] ERROR: {msg}")
+				if self.worker:
+					self.worker.request_reconnect(msg)
+				return
+	
+			ctrl = ch_map[uuid_ae01]
+			data = ch_map[uuid_ae02]
+	
+			# 设备保持连接/高速
+			ctrl.write_value(bytes([0x29]))
+			time.sleep(0.05)
+			ctrl.write_value(bytes([0x46]))
+			time.sleep(0.05)
+	
+			# 参数设置
+			isCompassOn = 0
+			barometerFilter = 2
+			Cmd_ReportTag = 0x7F
+	
+			params = bytearray(11)
+			params[0] = 0x12
+			params[1] = 5
+			params[2] = 255
+			params[3] = 0
+			params[4] = ((barometerFilter & 3) << 1) | (isCompassOn & 1)
+			params[5] = 50  # 建议和实际 20ms一致：50Hz；你之前写 60Hz 也可以，但要确保设备真输出 60Hz
+			params[6] = 1
+			params[7] = 3
+			params[8] = 5
+			params[9] = Cmd_ReportTag & 0xFF
+			params[10] = (Cmd_ReportTag >> 8) & 0xFF
+			ctrl.write_value(params)
+			time.sleep(0.05)
+	
+			# 开始主动上报
+			ctrl.write_value(bytes([0x19]))
+			time.sleep(0.05)
+	
+			# 启用通知
+			data.enable_notifications()
+			if self.worker:
+				self.worker.mark_connected()
+		except Exception as e:
+			save_log(f"[{self.mac_address}] init failed: {e}")
+			if self.worker:
+				self.worker.request_reconnect(f"init failed: {e}")
 
 	def characteristic_value_updated(self, characteristic, value):
 		# 原始字节打印（你调试时可开）
@@ -565,25 +577,24 @@ class BleWorker:
 		self.latest_metrics: Optional[Dict[str, Any]] = None
 		self.manager: Optional[gatt.DeviceManager] = None
 		self.device: Optional[AnyDevice] = None
+		self._reconnect_event = threading.Event()
+		self._connected_event = threading.Event()
 
-	def start(self):
-		if self.thread and self.thread.is_alive():
+	def mark_connected(self):
+		self._connected_event.set()
+
+	def request_reconnect(self, reason: str = ""):
+		# 被 AnyDevice 回调调用：标记需要重连，并让 mainloop 退出
+		if self._reconnect_event.is_set():
 			return
-		self.stop_event.clear()
-		self.thread = threading.Thread(target=self._run, name="ble-imu", daemon=True)
-		self.thread.start()
-
-	def stop(self, timeout: float = 5.0):
-		self.stop_event.set()
-	
-		# 先断开设备
+		if reason:
+			save_log(f"[BLE] reconnect requested: {reason}")
+		self._reconnect_event.set()
 		try:
 			if self.device is not None:
 				self.device.disconnect()
 		except Exception:
 			pass
-	
-		# 再停 manager（不同版本名字不同）
 		try:
 			if self.manager is not None:
 				if hasattr(self.manager, "stop"):
@@ -592,7 +603,18 @@ class BleWorker:
 					self.manager._main_loop.quit()
 		except Exception:
 			pass
-	
+
+	def start(self):
+		if self.thread and self.thread.is_alive():
+			return
+		self.stop_event.clear()
+		self._reconnect_event.clear()
+		self.thread = threading.Thread(target=self._run_forever, name="ble-imu", daemon=True)
+		self.thread.start()
+
+	def stop(self, timeout: float = 5.0):
+		self.stop_event.set()
+		self.request_reconnect("stop() called")
 		if self.thread:
 			self.thread.join(timeout=timeout)
 
@@ -609,7 +631,7 @@ class BleWorker:
 			except queue.Full:
 				pass
 
-	def _run(self):
+	def _run_forever(self):
 		def on_metrics(m: Dict[str, Any]):
 			with self._lock:
 				self.latest_metrics = m
@@ -618,28 +640,51 @@ class BleWorker:
 		def on_event(e: Dict[str, Any]):
 			self._put_drop_old(self.events_q, e)
 
-		# 注意：AnyDevice 里现在是 self.agg = MetricsAggregator()
-		# 这里我们把回调传进去，需要你按上面的 B) 修改 MetricsAggregator 支持 on_metrics/on_event
-		self.manager = gatt.DeviceManager(adapter_name=self.adapter)
+		backoff = 1.0
+		backoff_max = 30.0
 
-		self.device = AnyDevice(manager=self.manager, mac_address=self.mac)
+		while not self.stop_event.is_set():
+			self._reconnect_event.clear()
+			self._connected_event.clear()
 
-		# 把回调注入 aggregator（最小侵入做法：直接替换 agg）
-		self.device.agg = MetricsAggregator(on_metrics=on_metrics, on_event=on_event)
+			try:
+				self.manager = gatt.DeviceManager(adapter_name=self.adapter)
 
-		self.device.connect()
+				# 关键：把 worker 传给 device，让回调里能 request_reconnect
+				self.device = AnyDevice(manager=self.manager, mac_address=self.mac, worker=self)
 
-		try:
-			self.manager.run()
-		except Exception as err:
-			save_log(err)
-			# 这里建议你接入 logging
-			pass
+				# 注入回调聚合器
+				self.device.agg = MetricsAggregator(on_metrics=on_metrics, on_event=on_event)
+
+				save_log(f"[BLE] connecting {self.mac} via {self.adapter} ...")
+				self.device.connect()
+
+				# 阻塞运行，直到 disconnect / stop / 异常
+				self.manager.run()
+
+			except Exception as err:
+				save_log(f"[BLE] loop exception: {err}")
+
+			# 如果 stop，直接退出
+			if self.stop_event.is_set():
+				break
+
+			# 如果这轮曾经连接成功过，那么把 backoff 复位
+			if self._connected_event.is_set():
+				backoff = 1.0
+
+			# 走到这里说明 run() 退出了：准备重连
+			save_log(f"[BLE] disconnected or run() exited, will reconnect in {backoff:.1f}s")
+			time.sleep(backoff)
+			backoff = min(backoff * 2.0, backoff_max)
+
+		save_log("[BLE] worker thread exit")
+
 
 def get_ble(app: FastAPI) -> Optional[BleWorker]:
-    if not IMU_ENABLE:
-        return None
-    return getattr(app.state, "ble", None)
+	if not IMU_ENABLE:
+		return None
+	return getattr(app.state, "ble", None)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -647,7 +692,7 @@ async def lifespan(app: FastAPI):
 	if IMU_ENABLE:
 		app.state.ble = BleWorker(mac=BLE_MAC, adapter="hci0")
 		app.state.ble.start()
-		save_log(f"{BLE_MAC} CONNECTED")
+		save_log(f"{BLE_MAC} CONNECTING")
 	else:
 		app.state.ble = None
 
