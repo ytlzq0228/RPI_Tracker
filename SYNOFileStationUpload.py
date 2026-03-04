@@ -178,7 +178,7 @@ def upload_with_retry(session, sid, local_file, remote_dir):
 
 # ---------------- 主流程 ----------------
 def dsm_upload_files():
-	while True:
+	while NAS and USER and PASS:
 		try:
 			local_log_base_dir = Path(LOG_FILE_PATH)
 			if not local_log_base_dir.exists() or not local_log_base_dir.is_dir():
