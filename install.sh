@@ -4,8 +4,8 @@
 mount -o remount,rw / ; sudo mount -o remount,rw /boot
 
 apt-get update
-apt-get -y install i2c-tools python3-smbus python3-pip python3-pil libjpeg-dev zlib1g-dev libfreetype6-dev liblcms2-dev libopenjp2-7 libtiff5 gpsd
-python3 -m pip install --upgrade setuptools adafruit-circuitpython-ssd1306 adafruit-python-shell luma.oled pillow gps3 aprs psutil fastapi uvicorn
+apt-get -y install i2c-tools python3-smbus python3-pip python3-pil libjpeg-dev zlib1g-dev libfreetype6-dev liblcms2-dev libopenjp2-7 libtiff5 gpsd bluetooth bluez libglib2.0-dev python3-dbus python3-gi libopenblas0 python3-numpy
+python3 -m pip install --upgrade setuptools adafruit-circuitpython-ssd1306 adafruit-python-shell luma.oled pillow gps3 aprs psutil fastapi uvicorn gatt
 #安装必要依赖
 
 
