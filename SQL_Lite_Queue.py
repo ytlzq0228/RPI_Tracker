@@ -7,6 +7,7 @@ class PersistentQueue:
 	"""
 	Disk-backed FIFO queue with a deque-like subset API:
 	  - append(item: dict)
+	  - appendleft(item: dict)
 	  - popleft() -> dict
 	  - __len__() -> int
 	  - __bool__() -> bool
@@ -64,6 +65,22 @@ class PersistentQueue:
 							LIMIT (SELECT MAX(COUNT(*) - ?, 0) FROM queue)
 						)
 					""", (int(self.maxlen),))
+				conn.execute("COMMIT")
+			except:
+				conn.execute("ROLLBACK")
+				raise
+
+	def appendleft(self, item: Dict[str, Any]) -> None:
+		# 放回队首：取比当前最小 id 还小的 id（可为负），保持原有顺序不被打乱
+		item_json = json.dumps(item, ensure_ascii=False, separators=(",", ":"))
+
+		with self._lock, self._connect() as conn:
+			conn.execute("BEGIN IMMEDIATE")
+			try:
+				conn.execute(
+					"INSERT INTO queue(id, item_json) VALUES ((SELECT COALESCE(MIN(id), 1) - 1 FROM queue), ?)",
+					(item_json,),
+				)
 				conn.execute("COMMIT")
 			except:
 				conn.execute("ROLLBACK")

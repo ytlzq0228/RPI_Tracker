@@ -8,7 +8,7 @@ import aprs
 import socket
 import requests
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from utils.utils import save_log,get_cpu_temperature
 import threading
 
@@ -59,6 +59,42 @@ else:
 	from collections import deque
 	SEND_QUEUE = deque(maxlen=5000)
 
+
+TIME_VALID_MIN_YEAR = 2020
+
+def get_boot_id() -> str:
+	# time.monotonic() 是自开机起算的，跨重启不可比，用 boot_id 区分
+	try:
+		with open("/proc/sys/kernel/random/boot_id", "r") as f:
+			return f.read().strip()
+	except Exception:
+		return ""
+
+BOOT_ID = get_boot_id()
+
+def to_iso(dt: datetime) -> str:
+	return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+def system_time_is_valid() -> bool:
+	# RTC 丢失时系统时间会回落到 2000-01-01；ntpd 已由 gpsd(SHM) 和网络NTP共同校时，这里只看系统时钟
+	try:
+		return datetime.now(timezone.utc).year >= TIME_VALID_MIN_YEAR
+	except Exception:
+		return False
+
+def fix_payload_timestamp(item: dict) -> bool:
+	# 校时完成后用单调时钟回推该点的真实产生时刻，保留点与点之间的间隔
+	created_mono = item.get("created_mono")
+	if not system_time_is_valid() or created_mono is None or item.get("boot_id") != BOOT_ID:
+		return False
+	elapsed = max(time.monotonic() - float(created_mono), 0.0)
+	old_ts = item["payload"].get("timestamp")
+	item["payload"]["timestamp"] = to_iso(datetime.now(timezone.utc) - timedelta(seconds=elapsed))
+	item["needs_time_fix"] = False
+	save_log(f"Traccar Timestamp Fixed {old_ts} -> {item['payload']['timestamp']} elapsed={elapsed:.1f}s")
+	return True
+
+
 def traccar_report():
 	global report_traccar_timestamp,still_report_traccar_timestamp
 	while True:
@@ -77,8 +113,9 @@ def traccar_report():
 				time.sleep(1)
 				continue
 
-			# 时间戳
-			ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+			# 时间戳：系统时间失效（RTC丢失、尚未校时）时先记假时间并标记，等校时后由消费端修正
+			needs_time_fix = not system_time_is_valid()
+			ts = to_iso(datetime.now(timezone.utc))
 			if int(GPSd_raw_data.get("speed",0)) > STILL_SPEED_THRESHOLD or current_timestamp - still_report_traccar_timestamp > STILL_REPORT_INTERVAL:
 				still_report_traccar_timestamp = current_timestamp
 			else:
@@ -114,11 +151,16 @@ def traccar_report():
 				payload.update({k: v for k, v in IMU_Metrics_data.items() if k not in ignore_k_list})
 
 			save_log(f"Payload Producer:{payload}")
+			if needs_time_fix:
+				save_log(f"Traccar Hold Payload: system time not synced yet, queued until NTP/GPS fixes the clock")
 			SEND_QUEUE.append({
 				"payload": payload,
 				"attempts": 0,
 				"next_ts": 0,
-				"created_ts": current_timestamp
+				"created_ts": current_timestamp,
+				"created_mono": time.monotonic(),
+				"boot_id": BOOT_ID,
+				"needs_time_fix": needs_time_fix
 			})
 		except Exception as e:
 			save_log(f"Producer error: {e}")
@@ -138,6 +180,16 @@ def traccar_consumer():
 				SEND_QUEUE.append(item)
 				time.sleep(0.2)
 				continue
+			if item.get("needs_time_fix"):
+				# 还没校时：整条队列挂起，避免把 2000-01-01 的时间戳上报到 traccar
+				if not system_time_is_valid():
+					SEND_QUEUE.appendleft(item)   # 放回队首，不打乱上报顺序
+					time.sleep(1)
+					continue
+				if not fix_payload_timestamp(item):
+					# 上一次开机遗留的点：monotonic 跨重启不可比，真实时间已无法还原
+					save_log(f"Traccar Drop unfixable timestamp payload={item['payload']}")
+					continue
 			payload = item["payload"]
 
 			try:
