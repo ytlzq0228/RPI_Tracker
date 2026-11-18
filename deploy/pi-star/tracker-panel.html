@@ -1,0 +1,11 @@
+<!-- RPI_TRACKER_PANEL_BEGIN -->
+<?php if ($_SERVER['PHP_SELF'] != '/admin/index.php') { ?>
+<details open="open" style="clear: both; margin: 12px 8px; border: 1px solid #bbb; background: #fff; color: #222;">
+  <summary style="padding: 10px; cursor: pointer; font-weight: bold;">GPS / APRS Dashboard</summary>
+  <div style="padding: 0 10px 8px; text-align: right;">
+    <a href="/tracker/" target="_blank" rel="noopener">独立打开 Dashboard</a>
+  </div>
+  <iframe src="/tracker/" title="RPI Tracker GPS / APRS Dashboard" style="display: block; width: 100%; height: 680px; border: 0; background: #fff;"></iframe>
+</details>
+<?php } ?>
+<!-- RPI_TRACKER_PANEL_END -->

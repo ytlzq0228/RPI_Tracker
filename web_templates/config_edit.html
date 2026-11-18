@@ -92,7 +92,7 @@
         <div class="msg-err">{{ error }}</div>
     {% endif %}
 
-    <form method="post" action="/config">
+    <form method="post" action="config">
         {% for section, items in config.items() %}
             <h2>[{{ section }}]</h2>
 
@@ -117,7 +117,7 @@
         {% endfor %}
 
         <button class="btn" type="submit">保存并重启服务</button>
-        <a href="/" class="btn">返回 Dashboard 主页</a>
+        <a href="./" class="btn">返回 Dashboard 主页</a>
    
     </form>
 </body>

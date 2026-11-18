@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GPS Data Dashboard</title>
-    <script src="/static/chart.js"></script>
-    <script src="/static/chartjs-plugin-datalabels@2"></script>
+    <script src="static/chart.js"></script>
+    <script src="static/chartjs-plugin-datalabels@2"></script>
     <style>
         body, input, button, select, textarea {
             font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;
@@ -88,7 +88,7 @@
             </tbody>
         </table>
     </div>
-    <a href="/config" class="btn">配置</a>
+    <a href="config" class="btn">配置</a>
     <script>
         const ctx = document.getElementById('snrChart').getContext('2d');
         const ctxTrack = document.getElementById('trackMap').getContext('2d');
@@ -96,7 +96,7 @@
         let snrChart, trackChart;
 
         async function fetchSNRData() {
-            const response = await fetch('/snr-data');
+            const response = await fetch('snr-data');
             const data = await response.json();
             updateChart(data.satellites);
             setTimeout(fetchSNRData, 1000);  // 每1000毫秒更新一次
@@ -155,7 +155,7 @@
         }
 
         async function fetchTrackData() {
-            const response = await fetch('/path-data');
+            const response = await fetch('path-data');
             const data = await response.json();
             updateTrackMap(data.lat, data.lon, data.speed);
             setTimeout(fetchTrackData, 1000);  // 每500毫秒更新一次
@@ -219,14 +219,14 @@
         }
 
         async function fetchTPVData() {
-            const response = await fetch('/tpv-data');
+            const response = await fetch('tpv-data');
             const tpv = await response.json();
             updateTable(tpv, 'tpvTable');
             setTimeout(fetchTPVData, 1000);  // 每500毫秒更新一次
         }
 
         async function fetchStatusData() {
-            const response = await fetch('/status-data');
+            const response = await fetch('status-data');
             const log = await response.json();
             updateTable(log, 'StatusTable');
             setTimeout(fetchStatusData, 1000);  // 每500毫秒更新一次

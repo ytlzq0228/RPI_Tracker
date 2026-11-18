@@ -134,7 +134,7 @@ class NtripClient(object):
             #    (raw_data, parsed_data) = self.nmr.read()
             #except Exception as e:
             #    continue
-            if bytes("GNGGA",'ascii') in raw_data :
+            if raw_data and raw_data.startswith((b'$GNGGA,', b'$GPGGA,')):
                 # print(parsed_data)
                 return raw_data
 
@@ -215,8 +215,11 @@ class NtripClient(object):
                             #    (raw_data, parsed_data) = self.nmr.read()
                             #except Exception as e:
                             #    continue
-                            if bytes("GNGGA",'ascii') in raw_data :
-                                print(raw_data)
+                            if raw_data and raw_data.startswith((b'$GNGGA,', b'$GPGGA,')):
+                                # Keep the caster supplied with fresh rover positions.
+                                self.socket.sendall(raw_data)
+                                if self.verbose:
+                                    sys.stderr.write('GGA position sent\n')
 
                             if self.UDP_socket:
                                 self.UDP_socket.sendto(data, ('<broadcast>', self.UDP_Port))
