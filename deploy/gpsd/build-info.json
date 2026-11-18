@@ -1,0 +1,16 @@
+{
+  "upstream": "https://github.com/ntpsec/gpsd/tree/release-3.22",
+  "source_archive_sha256": "13a6097d94a4209ff144094af7fe74afbd375f0722316666326372b0cde96c30",
+  "patch": "0001-accept-rtcm3x.patch",
+  "patch_sha256": "a4b5c35fe74114e82fdb0efd026fc6208e30a6d2f37ca4ab69aafd650bbdfee6",
+  "target": "arm-linux-gnueabihf",
+  "binary_sha256": "bfe23051209368090cb33da074500623a88d4c94edd0c8dce528cc86a933a8b2",
+  "original_binary_sha256": "c8323777ee63bb2d03e8564124973b54d1f26a01a4f3a4890a4fe17681f82fe2",
+  "install_prefix": "/opt/gpsd-3.22-rtcm3x",
+  "build_host": "10.0.9.100",
+  "build_flags": "shared=no manbuild=no python=no qt=no dbus_export=yes magic_hat=yes debug=no",
+  "compiler": "GCC 10.2.1; isolated verified cpp-10 package; system compiler files not overwritten",
+  "compiler_package_sha256": "1779e1e6a5e8f81b14881b77896e838e96efe93105165d7adf2494fd7fd82aa8",
+  "build_directory": "/home/pi-star/gpsd-rtcm3x-build",
+  "notes": "Compiler/development files extracted into the build directory. Runtime libraries resolve to system paths. Distro gpsd and libgps binaries remain untouched."
+}

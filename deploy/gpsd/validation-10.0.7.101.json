@@ -1,0 +1,74 @@
+{
+  "host": "10.0.7.101",
+  "sample_seconds": 95,
+  "gga_count": 96,
+  "last_gga": [
+    {
+      "utc": "013404.000",
+      "quality": "6",
+      "satellites": "00",
+      "age": ""
+    },
+    {
+      "utc": "013405.000",
+      "quality": "6",
+      "satellites": "00",
+      "age": ""
+    },
+    {
+      "utc": "013406.000",
+      "quality": "6",
+      "satellites": "00",
+      "age": ""
+    },
+    {
+      "utc": "013407.000",
+      "quality": "6",
+      "satellites": "00",
+      "age": ""
+    },
+    {
+      "utc": "013408.000",
+      "quality": "6",
+      "satellites": "00",
+      "age": ""
+    }
+  ],
+  "rtcm_counts": {
+    "1084": 95,
+    "1124": 95,
+    "1074": 95,
+    "1005": 9,
+    "1033": 9
+  },
+  "tracker": {
+    "device": "/dev/gpsd0",
+    "time": "2026-11-17T01:34:07.000Z",
+    "mode": 3,
+    "status": 5,
+    "dgpsAge": null
+  },
+  "service": "MainPID=26062\nNRestarts=0\nActiveState=active\n",
+  "holds": [
+    "gpsd",
+    "libgps28"
+  ],
+  "rtk_validation": "Limited: quality=6 before and after migration, zero satellites, receiver time incorrect; differential application and RTK fix not verified",
+  "pre_migration_evidence": "Quectel_RTK journal 2026-11-18 19:58:01 through 19:59:06: GGA quality=6",
+  "traccar": {
+    "queue_len": 0,
+    "report_traccar_timestamp": 1795003323.2636206,
+    "still_report_traccar_timestamp": 1795003207.6414056,
+    "TRACCAR_REPORT_INTERVAL": 1
+  },
+  "verified_at_epoch": 1795003323.986444,
+  "pps_validation": "chrony not installed; not verified",
+  "reconnect_validation": "Not injected on this host; same binary tested on 10.0.9.100",
+  "reboot_validation": "Not performed",
+  "binary_sha256": "bfe23051209368090cb33da074500623a88d4c94edd0c8dce528cc86a933a8b2",
+  "io_trace_15s": {
+    "serial_write_calls": 48,
+    "serial_write_bytes": 4094,
+    "gga_network_send_calls": 3
+  }
+}

@@ -1,0 +1,12 @@
+--- a/gpsd/net_ntrip.c
++++ b/gpsd/net_ntrip.c
+@@ -98,7 +98,8 @@
+         else if ((strcasecmp("RTCM 3", s) == 0) ||
+                  (strcasecmp("RTCM 3.0", s) == 0) ||
+                  (strcasecmp("RTCM3.0", s) == 0) ||
+-                 (strcasecmp("RTCM3", s) == 0))
++                 (strcasecmp("RTCM3", s) == 0) ||
++                 (strcasecmp("RTCM3X", s) == 0))
+             hold->format = fmt_rtcm3_0;
+         else if ((strcasecmp("RTCM3.1", s) == 0) ||
+                  (strcasecmp("RTCM 3.1", s) == 0))

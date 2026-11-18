@@ -1,0 +1,38 @@
+{
+  "verified_at": "2026-11-18T19:25:01.008233+08:00",
+  "host": "10.0.9.100",
+  "binary_sha256": "bfe23051209368090cb33da074500623a88d4c94edd0c8dce528cc86a933a8b2",
+  "ntrip_direct": true,
+  "mountpoint": "AUTO",
+  "source_format": "RTCM3X",
+  "serial_alias": "/dev/gpsd0",
+  "serial_target": "/dev/ttyUSB0",
+  "uart_injection_test": "RTCM received but differential age grew; USB selected instead",
+  "pps_device": "/dev/pps0",
+  "chrony_selected_source": "PPS",
+  "rtk_service": "disabled",
+  "gpsd_autostart": true,
+  "held_packages": [
+    "gpsd",
+    "gpsd-clients",
+    "libgps28",
+    "python3-gps"
+  ],
+  "single_usb_sample": {
+    "gga_float": 98,
+    "rtcm_frames": 468,
+    "last_60_differential_age_seconds": 1.0
+  },
+  "connection_recovery": {
+    "gpsd_pid_unchanged": true,
+    "local_tcp_port_before": 41970,
+    "local_tcp_port_after": 42322,
+    "differential_age_after_recovery_seconds": 1.0
+  },
+  "tracker_device": "/dev/gpsd0",
+  "tracker_status": 4,
+  "tracker_differential_age": 1.0,
+  "limitations": [
+    "Short live validation only; no overnight soak or OS reboot performed."
+  ]
+}

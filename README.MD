@@ -168,3 +168,7 @@ python3 -m unittest discover -s tests -v
 ```
 
 测试使用模拟串口与本地 TCP 服务，不连接真实差分账号，覆盖独立读取、最新 GGA、校验失败/过期拒发、断流期间持续上报、HTTP 分段、二进制首包和串口短写。
+
+## gpsd 与 RTK 集成部署
+
+支持千寻 `RTCM3X` 的 gpsd 补丁、部署流程、常用排错命令和回滚方法见 [部署说明](deploy/gpsd/README.md)。
