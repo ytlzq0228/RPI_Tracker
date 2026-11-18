@@ -17,266 +17,254 @@ Then heavily based on a unavco original.
 
 import socket
 import sys
-import datetime
 import base64
 import time
-#import ssl
+import threading
+import ssl as tls
 from optparse import OptionParser
 
 import serial
-from pynmeagps import NMEAReader
 
-#import logging
-#
-#logging.basicConfig(level=logging.ERROR)  
-
-version=0.2
-useragent="NTRIP JCMBsoftPythonClient/%.1f" % version
-
-# reconnect parameter (fixed values):
-factor=2 # How much the sleep time increases with each failed attempt
-maxReconnect=1
-maxReconnectTime=1200
-sleepTime=1 # So the first one is 1 second
+version = 0.3
+useragent = 'NTRIP RPITracker/%.1f' % version
 
 
+class NtripClient:
+    """One serial reader, one periodic GGA sender, one RTCM receive/forward loop."""
 
-
-class NtripClient(object):
-    def __init__(self,
-                 buffer=50,
-                 user="",
-                 out=sys.stdout,
-                 port=2101,
-                 caster="",
-                 mountpoint="",
-                 host=False,
-                 lat=46,
-                 lon=122,
-                 height=1212,
-                 ssl=False,
-                 verbose=False,
-                 UDP_Port=None,
-                 V2=False,
-                 headerFile=sys.stderr,
-                 headerOutput=False,
-                 maxConnectTime=0
-                 ):
-        self.buffer=buffer
-        self.user=base64.b64encode(bytes(user,'utf-8')).decode("utf-8")
-#        print(self.user)
-        self.out=out
-        self.port=port
-        self.caster=caster
-        self.mountpoint=mountpoint
-        self.setPosition(lat, lon)
-        self.height=height
-        self.verbose=verbose
-        self.ssl=ssl
-        self.host=host
-        self.UDP_Port=UDP_Port
-        self.V2=V2
-        self.headerFile=headerFile
-        self.headerOutput=headerOutput
-        self.maxConnectTime=maxConnectTime
-        self.socket=None
-        self.stream = serial.Serial(options.serial_port, 115200, timeout=3)
-        self.nmr = NMEAReader(self.stream)
-        
-
+    def __init__(self, buffer=4096, user='', out=None, port=2101, caster='',
+                 mountpoint='', host=False, lat=0, lon=0, height=0, ssl=False,
+                 verbose=False, UDP_Port=None, V2=False, headerFile=sys.stderr,
+                 headerOutput=False, maxConnectTime=0, serial_port='/dev/ttyUSB0',
+                 maxReconnect=1, gga_interval=5, gga_max_age=10, idle_timeout=60,
+                 stream=None):
+        self.buffer = buffer
+        self.user = base64.b64encode(user.encode()).decode()
+        self.port, self.caster = port, caster
+        self.mountpoint = '/' + mountpoint.lstrip('/')
+        self.ssl, self.V2, self.verbose = ssl, V2, verbose
+        self.headerFile, self.headerOutput = headerFile, headerOutput
+        self.maxConnectTime = maxConnectTime or 0
+        self.maxReconnect = maxReconnect
+        self.gga_interval, self.gga_max_age = gga_interval, gga_max_age
+        self.idle_timeout = idle_timeout
+        self.out = out
+        self.stream = stream if stream is not None else serial.Serial(
+            serial_port, 115200, timeout=0.2, write_timeout=3)
+        self.stop = threading.Event()
+        self.lock = threading.Lock()
+        self.latest_gga = None
+        self.serial_error = None
+        self.socket = None
+        self.UDP_Port = UDP_Port
+        self.UDP_socket = None
         if UDP_Port:
             self.UDP_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.UDP_socket.bind(('', 0))
             self.UDP_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        else:
-            self.UDP_socket=None
 
+    def log(self, text):
+        print(text, file=sys.stderr, flush=True)
 
-    def setPosition(self, lat, lon):
-        self.flagN="N"
-        self.flagE="E"
-        if lon>180:
-            lon=(lon-360)*-1
-            self.flagE="W"
-        elif (lon<0 and lon>= -180):
-            lon=lon*-1
-            self.flagE="W"
-        elif lon<-180:
-            lon=lon+360
-            self.flagE="E"
-        else:
-            self.lon=lon
-        if lat<0:
-            lat=lat*-1
-            self.flagN="S"
-        self.lonDeg=int(lon)
-        self.latDeg=int(lat)
-        self.lonMin=(lon-self.lonDeg)*60
-        self.latMin=(lat-self.latDeg)*60
+    @staticmethod
+    def valid_gga(line):
+        if not line.startswith((b'$GNGGA,', b'$GPGGA,')):
+            return False
+        try:
+            body, checksum = line[1:].split(b'*')
+            value = 0
+            for byte in body:
+                value ^= byte
+            fields = body.split(b',')
+            return (len(checksum) == 2 and value == int(checksum, 16)
+                    and len(fields) >= 15 and int(fields[6]) > 0
+                    and bool(fields[1]) and bool(fields[2]) and bool(fields[4]))
+        except (ValueError, IndexError):
+            return False
 
-    def getMountPointBytes(self):
-        mountPointString = "GET %s HTTP/1.1\r\nUser-Agent: %s\r\nAuthorization: Basic %s\r\n" % (self.mountpoint, useragent, self.user)
-#        mountPointString = "GET %s HTTP/1.1\r\nUser-Agent: %s\r\n" % (self.mountpoint, useragent)
-        if self.host or self.V2:
-           hostString = "Host: %s:%i\r\n" % (self.caster,self.port)
-           mountPointString+=hostString
-        if self.V2:
-           mountPointString+="Ntrip-Version: Ntrip/2.0\r\n"
-        mountPointString+="\r\n"
-        if self.verbose:
-           print (mountPointString)
-        return bytes(mountPointString,'ascii')
+    def read_serial(self):
+        pending = b''
+        try:
+            while not self.stop.is_set():
+                chunk = self.stream.read(min(max(self.stream.in_waiting, 1), 4096))
+                if not chunk:
+                    continue
+                pending += chunk
+                while b'\n' in pending:
+                    line, pending = pending.split(b'\n', 1)
+                    # Recover at a fresh sentence after a damaged/truncated sentence.
+                    line = line[line.rfind(b'$'):].strip() if b'$' in line else b''
+                    if self.valid_gga(line):
+                        with self.lock:
+                            self.latest_gga = (line + b'\r\n', time.monotonic())
+                if len(pending) > 8192:
+                    pending = b''
+        except Exception as exc:
+            self.serial_error = exc
+            self.stop.set()
 
     def getGGABytes(self):
-        while True:
-            (raw_data, parsed_data) = self.nmr.read()
-            #try:
-            #    (raw_data, parsed_data) = self.nmr.read()
-            #except Exception as e:
-            #    continue
-            if raw_data and raw_data.startswith((b'$GNGGA,', b'$GPGGA,')):
-                # print(parsed_data)
-                return raw_data
+        with self.lock:
+            snapshot = self.latest_gga
+        if snapshot and time.monotonic() - snapshot[1] <= self.gga_max_age:
+            return snapshot
+        return None
+
+    def getMountPointBytes(self):
+        request = ('GET %s HTTP/1.0\r\nHost: %s:%s\r\nUser-Agent: %s\r\n'
+                   'Authorization: Basic %s\r\n' %
+                   (self.mountpoint, self.caster, self.port, useragent, self.user))
+        if self.V2:
+            request += 'Ntrip-Version: Ntrip/2.0\r\n'
+        return (request + '\r\n').encode('ascii')
+
+    def read_response(self, sock):
+        data = b''
+        deadline = time.monotonic() + 10
+        while b'\r\n' not in data:
+            if time.monotonic() > deadline:
+                raise TimeoutError('NTRIP status timeout')
+            part = sock.recv(4096)
+            if not part:
+                raise ConnectionError('Server EOF before NTRIP status')
+            data += part
+            if len(data) > 16384:
+                raise ConnectionError('NTRIP response headers too large')
+        status, rest = data.split(b'\r\n', 1)
+        self.log('NTRIP status: ' + status.decode('ascii', 'replace'))
+        if status not in (b'ICY 200 OK', b'HTTP/1.0 200 OK', b'HTTP/1.1 200 OK'):
+            raise ConnectionError('NTRIP request rejected')
+        if status.startswith(b'ICY'):
+            return rest
+        while b'\r\n\r\n' not in data:
+            if len(data) > 16384 or time.monotonic() > deadline:
+                raise ConnectionError('Incomplete/oversized HTTP headers')
+            part = sock.recv(4096)
+            if not part:
+                raise ConnectionError('Server EOF in HTTP headers')
+            data += part
+        headers, body = data.split(b'\r\n\r\n', 1)
+        if b'transfer-encoding:' in headers.lower():
+            raise ConnectionError('Unsupported HTTP transfer encoding; use NTRIP v1')
+        if self.headerOutput:
+            self.headerFile.write(headers.decode('ascii', 'replace') + '\n')
+        return body
+
+    def send_gga(self, sock, ended, errors):
+        next_send = 0
+        warned = False
+        try:
+            while not ended.is_set() and not self.stop.is_set():
+                now = time.monotonic()
+                if now >= next_send:
+                    snapshot = self.getGGABytes()
+                    if snapshot:
+                        sentence, received = snapshot
+                        sock.sendall(sentence)
+                        fields = sentence.split(b',')
+                        if self.verbose:
+                            self.log('GGA sent: utc=%s age=%.2fs quality=%s' %
+                                     (fields[1].decode(), now - received, fields[6].decode()))
+                        next_send = now + self.gga_interval
+                        warned = False
+                    elif not warned:
+                        self.log('Waiting for fresh valid serial GGA; stale GGA not sent')
+                        warned = True
+                ended.wait(min(0.2, self.gga_interval))
+        except Exception as exc:
+            errors.append(exc)
+            ended.set()
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    def forward(self, data):
+        view = memoryview(data)
+        while view:
+            n = self.stream.write(view)
+            if not n:
+                raise IOError('Serial write made no progress')
+            view = view[n:]
+        if self.out:
+            self.out.write(data)
+        if self.UDP_socket:
+            self.UDP_socket.sendto(data, ('<broadcast>', self.UDP_Port))
+
+    def run_connection(self):
+        sock = socket.create_connection((self.caster, self.port), timeout=10)
+        self.socket = sock
+        ended, errors = threading.Event(), []
+        sender = None
+        try:
+            if self.ssl:
+                sock = tls.create_default_context().wrap_socket(sock, server_hostname=self.caster)
+                self.socket = sock
+            sock.sendall(self.getMountPointBytes())
+            first = self.read_response(sock)
+            sock.settimeout(1)
+            sender = threading.Thread(target=self.send_gga, args=(sock, ended, errors), daemon=True)
+            sender.start()
+            start = last_data = last_report = time.monotonic()
+            total = 0
+            leading = True
+            while not self.stop.is_set():
+                if errors:
+                    raise ConnectionError('GGA send failed: %s' % errors[0])
+                now = time.monotonic()
+                if self.maxConnectTime and now - start >= self.maxConnectTime:
+                    return
+                try:
+                    data = first if first else sock.recv(self.buffer)
+                    first = b''
+                except socket.timeout:
+                    if time.monotonic() - last_data >= self.idle_timeout:
+                        raise TimeoutError('No correction bytes for %.0fs (GGA sender remained active)' % self.idle_timeout)
+                    continue
+                if not data:
+                    raise ConnectionError('Server EOF: connection closed by peer')
+                if leading:
+                    data = data.lstrip(b'\r\n')  # Optional blank line after ICY status.
+                    if not data:
+                        continue
+                    leading = False
+                self.forward(data)
+                last_data = time.monotonic()
+                total += len(data)
+                if last_data - last_report >= 15:
+                    self.log('RTCM forwarded: bytes=%d connection_age=%.0fs' % (total, last_data - start))
+                    last_report = last_data
+            if self.serial_error:
+                raise IOError('Serial reader failed: %s' % self.serial_error)
+        finally:
+            ended.set()
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            if sender:
+                sender.join(timeout=3)
+            sock.close()
+            self.socket = None
 
     def readData(self):
-        reconnectTry=1
-        sleepTime=1
-        reconnectTime=0
-        if self.maxConnectTime > 0 :
-            EndConnect=datetime.timedelta(seconds=maxConnectTime)
+        reader = threading.Thread(target=self.read_serial, daemon=True)
+        reader.start()
         try:
-            while reconnectTry<=maxReconnect:
-                found_header=False
-                if self.verbose:
-                    sys.stderr.write('Connection {0} of {1}\n'.format(reconnectTry,maxReconnect))
-
-                self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                if self.ssl:
-                    self.socket=ssl.wrap_socket(self.socket)
-
-                error_indicator = self.socket.connect_ex((self.caster, self.port))
-                if error_indicator==0:
-                    sleepTime = 1
-                    connectTime=datetime.datetime.now()
-
-                    self.socket.settimeout(10)
-                    self.socket.sendall(self.getMountPointBytes())
-                    while not found_header:
-                        casterResponse=self.socket.recv(4096) #All the data
-                        # print(casterResponse)
-                        header_lines = casterResponse.decode('utf-8').split("\r\n")
-                        
-# header_lines empty, request fail,exit while loop
-                        for line in header_lines:
-                            if line=="":
-                                if not found_header:
-                                    found_header=True
-                                    if self.verbose:
-                                        sys.stderr.write("End Of Header"+"\n")
-                            else:
-                                if self.verbose:
-                                    sys.stderr.write("Header: " + line+"\n")
-                            if self.headerOutput:
-                                self.headerFile.write(line+"\n")
-
-
-
-#header_lines has content
-                        for line in header_lines:
-                            if line.find("SOURCETABLE")>=0:
-                                sys.stderr.write("Mount point does not exist")
-                                sys.exit(1)
-                            elif line.find("401 Unauthorized")>=0:
-                                sys.stderr.write("Unauthorized request\n")
-                                sys.exit(1)
-                            elif line.find("404 Not Found")>=0:
-                                sys.stderr.write("Mount Point does not exist\n")
-                                sys.exit(2)
-                            elif line.find("ICY 200 OK")>=0:
-                                #Request was valid
-                                self.socket.sendall(self.getGGABytes())
-                            elif line.find("HTTP/1.0 200 OK")>=0:
-                                #Request was valid
-                                self.socket.sendall(self.getGGABytes())
-                            elif line.find("HTTP/1.1 200 OK")>=0:
-                                #Request was valid
-                                self.socket.sendall(self.getGGABytes())
-
-
-
-                    data = "Initial data"
-                    while data:
-                        try:
-                            data=self.socket.recv(self.buffer)
-                            # self.out.buffer.write(data)
-                            self.stream.write(data)
-                            (raw_data, parsed_data) = self.nmr.read()
-                            #try:
-                            #    (raw_data, parsed_data) = self.nmr.read()
-                            #except Exception as e:
-                            #    continue
-                            if raw_data and raw_data.startswith((b'$GNGGA,', b'$GPGGA,')):
-                                # Keep the caster supplied with fresh rover positions.
-                                self.socket.sendall(raw_data)
-                                if self.verbose:
-                                    sys.stderr.write('GGA position sent\n')
-
-                            if self.UDP_socket:
-                                self.UDP_socket.sendto(data, ('<broadcast>', self.UDP_Port))
-#                            print datetime.datetime.now()-connectTime
-                            if maxConnectTime :
-                                if datetime.datetime.now() > connectTime+EndConnect:
-                                    if self.verbose:
-                                        sys.stderr.write("Connection Timed exceeded\n")
-                                    sys.exit(0)
-#                            self.socket.sendall(self.getGGAString())
-
-
-
-                        except socket.timeout:
-                            if self.verbose:
-                                sys.stderr.write('Connection TimedOut\n')
-                            data=False
-                        except socket.error:
-                            if self.verbose:
-                                sys.stderr.write('Connection Error\n')
-                            data=False
-
-                    if self.verbose:
-                        sys.stderr.write('Closing Connection\n')
-                    self.socket.close()
-                    self.socket=None
-
-                    if reconnectTry < maxReconnect :
-                        sys.stderr.write( "%s No Connection to NtripCaster.  Trying again in %i seconds\n" % (datetime.datetime.now(), sleepTime))
-                        time.sleep(sleepTime)
-                        sleepTime *= factor
-
-                        if sleepTime>maxReconnectTime:
-                            sleepTime=maxReconnectTime
-                    else:
-                        sys.exit(1)
-
-
-                    reconnectTry += 1
-                else:
-                    self.socket=None
-                    if self.verbose:
-                        print ("Error indicator: ", error_indicator)
-
-                    if reconnectTry < maxReconnect :
-                        sys.stderr.write( "%s No Connection to NtripCaster.  Trying again in %i seconds\n" % (datetime.datetime.now(), sleepTime))
-                        time.sleep(sleepTime)
-                        sleepTime *= factor
-                        if sleepTime>maxReconnectTime:
-                            sleepTime=maxReconnectTime
-                    reconnectTry += 1
-
-        except KeyboardInterrupt:
-            if self.socket:
-                self.socket.close()
+            for attempt in range(max(1, self.maxReconnect)):
+                try:
+                    self.run_connection()
+                    return
+                except (OSError, serial.SerialException) as exc:
+                    self.log('Connection ended: %s' % exc)
+                    if self.serial_error or attempt + 1 >= max(1, self.maxReconnect):
+                        raise
+                    self.stop.wait(min(2 ** attempt, 30))
+        finally:
+            self.stop.set()
+            reader.join(timeout=3)
             self.stream.close()
-            sys.exit()
+            if self.UDP_socket:
+                self.UDP_socket.close()
 
 if __name__ == '__main__':
     usage="NtripClient.py [options] [caster] [port] mountpoint"
@@ -355,16 +343,17 @@ if __name__ == '__main__':
     if options.UDP:
          ntripArgs['UDP_Port']=int(options.UDP)
 
-    maxReconnect=options.maxReconnect
-    maxConnectTime=options.maxConnectTime
+    ntripArgs['maxReconnect'] = options.maxReconnect
+    ntripArgs['maxConnectTime'] = options.maxConnectTime
+    ntripArgs['serial_port'] = options.serial_port
 
     if options.verbose:
         print ("Server: " + ntripArgs['caster'])
         print ("Port: " + str(ntripArgs['port']))
-        print ("User: " + ntripArgs['user'])
+        print ("Authentication: configured")
         print ("mountpoint: " +ntripArgs['mountpoint'])
-        print ("Reconnects: " + str(maxReconnect))
-        print ("Max Connect Time: " + str (maxConnectTime))
+        print ("Reconnects: " + str(options.maxReconnect))
+        print ("Max Connect Time: " + str(options.maxConnectTime))
         if ntripArgs['V2']:
             print ("NTRIP: V2")
         else:
@@ -392,6 +381,10 @@ if __name__ == '__main__':
     n = NtripClient(**ntripArgs)
     try:
         n.readData()
+    except KeyboardInterrupt:
+        pass
+    except (OSError, serial.SerialException):
+        sys.exit(1)
     finally:
         if fileOutput:
             f.close()
