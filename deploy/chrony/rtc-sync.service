@@ -1,0 +1,7 @@
+[Unit]
+Description=Write GPS/PPS-disciplined system time to RTC
+After=chrony.service
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/hwclock --systohc --utc --noadjfile

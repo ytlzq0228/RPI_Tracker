@@ -69,3 +69,7 @@ apt hold 防止常规升级替换相关发行版包，自定义二进制另存 /
 - 10.0.9.100：原 validation.json 记录；已验证 FLOAT、差分龄期约 1 秒、断线恢复及 chrony PPS。
 - 10.0.7.101：见 validation-10.0.7.101.json。沿用本机 qxymtq002，95 秒收到 303 条 RTCM3、96 条 GGA，自动重启 0。另用 15 秒系统调用采样确认 USB 写入 4094 字节、NTRIP 上报 GGA 3 次。Tracker 输出更新、Traccar 队列 0。仅 gpsd 和 libgps28 实际安装并被 hold；未安装的 gpsd-clients/python3-gps 未安装或锁定。
 - 7.101 验证限制：迁移前旧服务日志已有 GGA quality=6；迁移后卫星数为 0、quality=6、接收机时间错误，因此本次保留已验证服务链路的部署，但不宣称差分被用于有效卫星解算或 RTK FIX。未安装 chrony，未验证 PPS 授时；未在该机注入断线或整机重启。恢复有效卫星信号后须补做差分龄期与 FLOAT/FIX 验证。
+
+## 后续授时对齐
+
+2026-11-18 晚间，7.101 已迁移至独立部署的 chrony 4.3，GPS 作为 PPS 整秒参考（noselect），PPS 优先，10.0.7.1 为备用时间源。当前 GPS 时间异常、PPS 无可用样本，实际由网关授时。先前验证记录中的“未安装 chrony”是迁移前状态。服务配置、验证和回滚方法见 [授时部署说明](../chrony/README.md)。9.100 两个旧故障服务也已停用。

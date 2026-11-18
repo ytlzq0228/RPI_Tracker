@@ -1,0 +1,17 @@
+[Unit]
+Description=NTRIP Client Service for GNSS RTK Correction
+After=network.target gpsd.service
+ConditionPathExists=/dev/ttyUSB0
+
+[Service]
+ExecStart=/etc/RPI_APRS/Quectel_RTK_Service/Quectel_RTK.sh
+Restart=always
+RestartSec=30
+Environment=PYTHONDONTWRITEBYTECODE=1
+User=root
+WorkingDirectory=/etc/RPI_APRS/Quectel_RTK_Service/
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

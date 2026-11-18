@@ -1,0 +1,19 @@
+{
+  "host": "10.0.7.101",
+  "verified_at_epoch": 1795006186.586828,
+  "sources": "MS Name/IP address         Stratum Poll Reach LastRx Last sample               \n===============================================================================\n#? GPS                           0   3   177    11   +2067m[ +2067m] +/-  100ms\n#? PPS                           0   3     0     -     +0ns[   +0ns] +/-    0ns\n^* 10.0.7.1                      3   6    17    56  -3370ns[ +413ns] +/-   38ms\n",
+  "tracking": "Reference ID    : 0A000701 (10.0.7.1)\nStratum         : 4\nRef time (UTC)  : Wed Nov 18 12:48:50 2026\nSystem time     : 0.000000134 seconds fast of NTP time\nLast offset     : +0.000003783 seconds\nRMS offset      : 0.000003783 seconds\nFrequency       : 1.490 ppm fast\nResidual freq   : +4.522 ppm\nSkew            : 56.138 ppm\nRoot delay      : 0.051075645 seconds\nRoot dispersion : 0.016480984 seconds\nUpdate interval : 2.0 seconds\nLeap status     : Normal\n",
+  "services": "NRestarts=0\nId=chrony.service\nActiveState=active\nSubState=running\n\nNRestarts=0\nId=gpsd.service\nActiveState=active\nSubState=running\n\nNRestarts=0\nId=RPI_Tracker.service\nActiveState=active\nSubState=running\n\nNRestarts=0\nId=ntp.service\nActiveState=inactive\nSubState=dead\n\nNRestarts=0\nId=Quectel_RTK.service\nActiveState=inactive\nSubState=dead\n",
+  "rtc": "Result=success\nExecMainStatus=0\n",
+  "chronyd_sha256": "c9014afb3fe427960c022167c1f7dc3026a96f1f2bd405142abfa09e5c9cdf38",
+  "limits": "GPS time incorrect; GPS noselect provides PPS lock only. PPS input not usable yet; current synchronization uses gateway. No reboot test.",
+  "5050": {
+    "device": "/dev/gpsd0",
+    "time": "2026-11-17T02:22:54.000Z",
+    "mode": 3,
+    "status": 5
+  },
+  "5051": {
+    "queue_len": 0
+  }
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=GPS Tracker Reporter Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/etc/RPI_Tracker
+ExecStart=/usr/bin/python3 RPI_Tracker.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+[Install]
+WantedBy=multi-user.target

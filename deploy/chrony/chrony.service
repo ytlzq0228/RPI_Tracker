@@ -1,0 +1,15 @@
+[Unit]
+Description=Chrony GPS/PPS and gateway time synchronization
+After=network.target gpsd.service
+Wants=gpsd.service
+Conflicts=ntp.service systemd-timesyncd.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/install -d -o _chrony -g _chrony -m 0750 /run/chrony
+ExecStart=/opt/chrony-4.3/sbin/chronyd -n -u _chrony -f /etc/chrony/chrony.conf
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
