@@ -45,7 +45,6 @@ config.read(CONFIG_FILE)
 
 LOG_FILE_PATH = config['SYNO_Config']['LOCAL_LOG_FILE_PATH']
 SSID = config['SSID_Config']['SSID']
-APRS_LOG_FILE = f"{LOG_FILE_PATH}/{datetime.now().strftime('%Y-%m-%d')}-GPS-{SSID}.log"
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
@@ -208,6 +207,7 @@ def update_log_file_data():
 	LOG_ERROR_STATUS = False
 	while True:
 		try:
+			APRS_LOG_FILE = f"{LOG_FILE_PATH}/{datetime.now().strftime('%Y-%m-%d-%H')}-GPS-{SSID}.log"
 			if os.path.exists(APRS_LOG_FILE):
 				log_file_update_time = os.path.getmtime(APRS_LOG_FILE)
 				updatetime_diff = int(time.time() - log_file_update_time)

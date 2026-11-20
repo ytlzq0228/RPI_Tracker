@@ -15,8 +15,9 @@ SSID=config['APRS_Config']['SSID']
 def save_log(result):
 	try:
 		#print(result)
-		now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-		LOG_FILE = f"{LOG_FILE_PATH}/{datetime.now().strftime('%Y-%m-%d')}-GPS-{SSID}.log"
+		log_time = datetime.now()
+		now = log_time.strftime('%Y-%m-%d %H:%M:%S')
+		LOG_FILE = f"{LOG_FILE_PATH}/{log_time.strftime('%Y-%m-%d-%H')}-GPS-{SSID}.log"
 		f = open(LOG_FILE,'a')
 		f.writelines("\n%s log:%s" %(now,result))
 		f.flush()
