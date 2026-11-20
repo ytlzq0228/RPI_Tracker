@@ -29,10 +29,10 @@ DRY_RUN = False		   # True: 只打印不上传
 # 超时
 TIMEOUT_GET = 10
 TIMEOUT_POST = 1800
-WAIT_CYCLE = 5
+WAIT_CYCLE = 600  # 每轮上传结束后等待 10 分钟
 
 MAX_RETRY_PER_FILE = 3
-REMOTE_INDEX_TTL = 60  # 秒，避免每 5 秒都 list 远端
+REMOTE_INDEX_TTL = 60  # 秒，同一轮扫描中复用远端目录索引
 
 # ---------------- DSM WebAPI 帮助函数 ----------------
 def api_get(session: requests.Session, url: str, params: Dict, verify) -> Dict:
